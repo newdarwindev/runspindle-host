@@ -22,3 +22,7 @@ Preserve explicit authority and unknown outcomes. Distinguish request admission,
 4. Failure, restart, uncertain-effect reconciliation and rollback evidence.
 
 None of these product gates has been run for this scaffold.
+
+A pinned [shared synthetic fixture subset](../docs/SHARED_FIXTURES.md) now has
+standalone Python consumer checks. Native/Rust adapter behavior and upstream
+compatibility remain unimplemented; these fixture checks are separate evidence.

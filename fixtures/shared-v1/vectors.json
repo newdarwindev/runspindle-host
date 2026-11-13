@@ -1,0 +1,25 @@
+[
+  {
+    "expected_error": "schema-version",
+    "id": "native.observed-unknown-version",
+    "kind": "native.observed",
+    "mutation": {
+      "path": [
+        "schema"
+      ],
+      "value": "runspindle.fixture.v99"
+    }
+  },
+  {
+    "expected_error": "identity-mismatch",
+    "id": "native.observed-wrong-host",
+    "kind": "native.observed",
+    "mutation": {
+      "path": [
+        "identity",
+        "host_id"
+      ],
+      "value": "synthetic-other-host"
+    }
+  }
+]
