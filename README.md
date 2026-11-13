@@ -33,6 +33,6 @@ Read [the component-specific technical intent](specs/desired-intent.md) for its
 interfaces, privacy boundaries, failure cases and acceptance obligations. Current
 implementation and evidence limits above remain unchanged.
 
-The additional [durable library mapping](../specs/durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
+The additional [durable library mapping](specs/durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
 scripted-peer tests. Earlier process-local evidence remains separate; actual native
 protocol, production durability and live acceptance remain unqualified.
