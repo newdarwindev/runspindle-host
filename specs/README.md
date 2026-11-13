@@ -33,3 +33,7 @@ compatibility remains blocked. Fixture-format checks remain separate evidence.
 managed sessions, explicit human exceptions and evaluated maintained workflows.
 It adds design and verification obligations without changing runtime schemas,
 existing acceptance results or operational permissions.
+
+The additional [durable library mapping](durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
+scripted-peer tests. Earlier process-local evidence remains separate; actual native
+protocol, production durability and live acceptance remain unqualified.

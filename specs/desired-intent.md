@@ -54,3 +54,7 @@ The bounded process-local lifecycle adapter exercises injected scripted peers.
 It has no durable recovery or qualified native app-server transport, and capture,
 text transfer and submission remain unsupported. See [lifecycle semantics](lifecycle.md)
 and [implementation evidence](../docs/IMPLEMENTATION_EVIDENCE.md).
+
+The additional [durable library mapping](durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
+scripted-peer tests. Earlier process-local evidence remains separate; actual native
+protocol, production durability and live acceptance remain unqualified.

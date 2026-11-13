@@ -1,8 +1,9 @@
 {
   "dev_deployment": "not_run",
-  "durable_lifecycle_state": "not_implemented",
+  "durable_lifecycle_evidence": "docs/durable-lifecycle-tests.json",
+  "durable_lifecycle_state": "locally_tested_bounded_sqlite",
   "github_ci": "not_run",
-  "implementation": "partial_process_local_lifecycle_adapter",
+  "implementation": "partial_durable_lifecycle_adapter",
   "isolated_integration": "not_run",
   "legacy_archival": "not_started",
   "lifecycle_evidence": "docs/local-lifecycle-tests.json",
