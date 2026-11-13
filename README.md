@@ -20,3 +20,7 @@ Requires Rust/Cargo 1.94.1 and Python 3.9+; no dependency download, native accou
 network transport, background service or provider is used. See
 [behavior and boundaries](specs/lifecycle.md) and
 [implementation evidence](docs/IMPLEMENTATION_EVIDENCE.md).
+
+## Implemented validation
+
+Run `python3 tools/validate.py` for all implemented structural, language, fixture, artifact and mutation checks in this repository. The same entrypoint runs on trusted `main` and `ci/*` pushes and manual qualification using disposable Strix x64 guests. Logs include the checkout SHA, image/tool identities, command results and applicable artifact checksums. Unimplemented builds and product acceptance remain explicit in `STATUS.json`; blocked acceptance workflows retain their failing conclusions. ARM64 and native macOS qualification remain pending.
