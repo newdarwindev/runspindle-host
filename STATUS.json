@@ -1,8 +1,14 @@
 {
   "dev_deployment": "not_run",
-  "implementation": "not_implemented",
+  "durable_lifecycle_state": "not_implemented",
+  "github_ci": "not_run",
+  "implementation": "partial_process_local_lifecycle_adapter",
+  "isolated_integration": "not_run",
   "legacy_archival": "not_started",
+  "lifecycle_evidence": "docs/local-lifecycle-tests.json",
+  "lifecycle_tests": "passed",
   "live_acceptance": "not_run",
+  "native_protocol_qualification": "blocked",
   "production_deployment": "not_run",
   "runner_capacity": "unverified",
   "selected_source_migration": "partial",
@@ -13,5 +19,5 @@
     "source_commit": "e8cd5779968fede213443db13a591c992cd0e183",
     "status": "locally_tested"
   },
-  "stage": "scaffold"
+  "stage": "lifecycle_candidate"
 }

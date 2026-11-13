@@ -1,7 +1,18 @@
 {
   "license_status": "No blanket license is granted to imported material. See LEGAL.md.",
-  "new_files": "New scaffolding and adapted specifications; no old Git history imported.",
+  "new_files": "Original process-local lifecycle adapter, scripted synthetic peer/tests and evidence; no legacy executable source, third-party dependencies or Git history imported.",
   "provenance_policy": "Public IDs resolve to a privately retained source record containing repository, exact commit, path, source hash and review notes. Private repository names, URLs and operational details are omitted.",
+  "runtime_contract": {
+    "commit": "4b700269be9a4feab7b955faf0229fbdd77d8aa9",
+    "mapping": "specs/lifecycle.md",
+    "paths": [
+      "specs/runtime-v1.md",
+      "contracts/runtime-v1.json"
+    ],
+    "repository": "newdarwindev/runspindle",
+    "version": "runspindle.runtime.v1",
+    "wire_conformance": "not_claimed"
+  },
   "schema_version": 1,
   "shared_synthetic_fixture_source": {
     "adaptation": "Byte-preserved validator/schema/artifact; generated component-only golden and mutation subsets with immutable hashes. No legacy source import.",

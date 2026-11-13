@@ -1,6 +1,11 @@
-//! Public contract stub. It performs no external operations.
+//! Process-local lifecycle adapter plus fail-closed operational activation.
+#![forbid(unsafe_code)]
+
+pub mod lifecycle;
 #[derive(Debug, PartialEq)]
-pub enum ReadinessError { NotImplemented }
+pub enum ReadinessError {
+    NotImplemented,
+}
 
 pub fn activate() -> Result<(), ReadinessError> {
     Err(ReadinessError::NotImplemented)
