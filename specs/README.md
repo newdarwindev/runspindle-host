@@ -26,3 +26,10 @@ Synthetic component behavior is exercised separately; integration and live gates
 A pinned [shared synthetic fixture subset](../docs/SHARED_FIXTURES.md) now has
 standalone Python consumer checks. Rust lifecycle behavior is separately exercised in [lifecycle.md](lifecycle.md); native upstream
 compatibility remains blocked. Fixture-format checks remain separate evidence.
+
+## Engineering direction
+
+[Desired intent](desired-intent.md) connects this component to scoped access,
+managed sessions, explicit human exceptions and evaluated maintained workflows.
+It adds design and verification obligations without changing runtime schemas,
+existing acceptance results or operational permissions.

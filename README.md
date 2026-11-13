@@ -20,3 +20,15 @@ Requires Rust/Cargo 1.94.1 and Python 3.9+; no dependency download, native accou
 network transport, background service or provider is used. See
 [behavior and boundaries](specs/lifecycle.md) and
 [implementation evidence](docs/IMPLEMENTATION_EVIDENCE.md).
+
+## Desired technical direction
+
+Native session continuity: this component contributes to turning authorized one-off work into
+repeatable, maintained cross-application workflows. Scoped access, managed
+sessions, explicit human exceptions and evaluated DSPy candidates are intended
+to compose into that capability; no automatic improvement or live integration
+is implied.
+
+Read [the component-specific technical intent](specs/desired-intent.md) for its
+interfaces, privacy boundaries, failure cases and acceptance obligations. Current
+implementation and evidence limits above remain unchanged.
