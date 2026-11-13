@@ -1,0 +1,56 @@
+{
+  "checks": {
+    "clippy": "passed",
+    "formatting": "passed",
+    "mutations": {
+      "detected": [
+        "blind_retry",
+        "session_rebinding",
+        "cancel_ack_as_terminal"
+      ],
+      "status": "passed"
+    },
+    "operational_negative_control": {
+      "exit": 78,
+      "status": "blocked"
+    },
+    "python_fixture_tests": {
+      "count": 7,
+      "status": "passed"
+    },
+    "rust_tests": {
+      "count": 19,
+      "status": "passed"
+    },
+    "scaffold": "passed"
+  },
+  "contract_composition_commit": "4b700269be9a4feab7b955faf0229fbdd77d8aa9",
+  "contract_version": "runspindle.runtime.v1",
+  "durable_state": "not_implemented",
+  "evidence_class": "component",
+  "github_ci": "unverified",
+  "hashes": {
+    "Cargo.lock": "1223010192c836381c0c4963542625e458062180907e8129e0b9af833c90273f",
+    "Cargo.toml": "0bd598ca46a05d7dbb35228d0a11ba0f279c6c90f726fc39781d5602f7e19a5e",
+    "specs/lifecycle.md": "8607e77c598670e176021f507a06e8778b48f7fba1ce7c5ed8ea92575b01aba9",
+    "src/lib.rs": "b1ab1883a3ee0ec836d80344400a4742f94294a3abea77b631806f723ab0b549",
+    "src/lifecycle.rs": "9a498065c7cc6ba353db9c13405f409ffac747a443ea5227c6871d2e77768116",
+    "tests/lifecycle.rs": "6b005ab32434b1e30aee3bac9abbc6d7f033e74a63595fb3852cc7952a2f6d6c",
+    "tools/check_lifecycle.py": "a33270d7ea42da918da0c8ad16f1536f9fb43be0cf684f1643cf7360e7edba2b",
+    "tools/check_lifecycle_mutations.py": "011266a04d02ff26eb7b54efca9afe4ce09295726b89add10edea5967e227578"
+  },
+  "isolated_integration": "not_run",
+  "live_acceptance": "not_run",
+  "native_protocol": "blocked",
+  "observed_at": "2026-11-13T19:11:53.592770+00:00",
+  "restart_durability": "blocked",
+  "scenario_seed": "deterministic-script-v1",
+  "schema_version": 1,
+  "source_base": "ab34c149c6137ce67ac8433d1bad2fab2572111f",
+  "toolchain": {
+    "cargo": "1.94.1 (29ea6fb6a 2026-03-24)",
+    "python": "3.9.6",
+    "rustc": "1.94.1 (e408947bf 2026-03-25)"
+  },
+  "wire_conformance": "not_claimed"
+}

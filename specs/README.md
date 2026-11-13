@@ -1,6 +1,6 @@
 # host specification
 
-Status: planned contract, implementation and live acceptance not verified.
+Status: process-local lifecycle candidate; native protocol, durable recovery and live acceptance not verified.
 
 ## Responsibility
 
@@ -21,8 +21,8 @@ Preserve explicit authority and unknown outcomes. Distinguish request admission,
 3. Bounded live acceptance in an authorized target.
 4. Failure, restart, uncertain-effect reconciliation and rollback evidence.
 
-None of these product gates has been run for this scaffold.
+Synthetic component behavior is exercised separately; integration and live gates remain not run.
 
 A pinned [shared synthetic fixture subset](../docs/SHARED_FIXTURES.md) now has
-standalone Python consumer checks. Native/Rust adapter behavior and upstream
-compatibility remain unimplemented; these fixture checks are separate evidence.
+standalone Python consumer checks. Rust lifecycle behavior is separately exercised in [lifecycle.md](lifecycle.md); native upstream
+compatibility remains blocked. Fixture-format checks remain separate evidence.

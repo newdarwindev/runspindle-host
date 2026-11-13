@@ -4,4 +4,4 @@ Use the supported native Codex app-server session/turn/item/tool protocol, prese
 
 Only exposed progress/reasoning summaries may be mirrored; hidden chain-of-thought is not a source. Capture and cross-device text-transfer methods and destination submission behavior remain unresolved. Do not silently choose them.
 
-Required tests: offline pin, duplicate delivery, lost launch response, reconnect, stale session, unsupported event, cancellation and native macOS/Linux capability differences. None has run here.
+Required tests: offline pin, duplicate delivery, lost launch response, reconnect, stale session, unsupported event, cancellation and native macOS/Linux capability differences. The transport-independent synthetic subset is exercised by [lifecycle.md](lifecycle.md); actual native protocol qualification remains blocked.
