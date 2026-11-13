@@ -65,3 +65,7 @@ cancellation is claimed. A peer panic retains intent within the surviving
 adapter, but a fresh adapter has no history. Production restart safety, native
 session/turn/item/tool conformance, actual capability negotiation and trusted
 transport/sanitization remain blocked. Issues #1 and #2 remain open.
+
+The additional [durable library mapping](durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
+scripted-peer tests. Earlier process-local evidence remains separate; actual native
+protocol, production durability and live acceptance remain unqualified.

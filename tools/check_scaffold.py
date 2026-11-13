@@ -8,9 +8,9 @@ for name in required:
 c = json.loads((root/'component.json').read_text())
 s = json.loads((root/'STATUS.json').read_text())
 assert c['stage'] == s['stage'] == 'lifecycle_candidate'
-assert s['implementation'] == 'partial_process_local_lifecycle_adapter'
+assert s['implementation'] == 'partial_durable_lifecycle_adapter'
 assert s['native_protocol_qualification'] == 'blocked'
-assert s['durable_lifecycle_state'] == 'not_implemented'
+assert s['durable_lifecycle_state'] == 'locally_tested_bounded_sqlite'
 assert s['isolated_integration'] == 'not_run'
 for name in ['src/lifecycle.rs', 'tests/lifecycle.rs', 'specs/lifecycle.md', 'docs/local-lifecycle-tests.json']:
     assert (root/name).is_file(), f'Missing {name}'

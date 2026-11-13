@@ -1,12 +1,14 @@
 //! Bounded, process-local lifecycle coordination over an injected peer.
 //! This is not a native app-server protocol, durable store or authorization service.
+use crate::storage::{Memory, Storage, Stored};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 
 pub const VERSION: &str = "runspindle.runtime.v1";
 pub const MAX_IDENTIFIER_BYTES: usize = 128;
 pub const MAX_EVENT_BYTES: usize = 4096;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Binding {
     pub task_id: String,
     pub revision: u64,
@@ -40,7 +42,7 @@ fn valid_id(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {
     pub version: String,
     pub binding: Binding,
@@ -63,13 +65,13 @@ impl Verifier for Deny {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminal {
     Completed,
     Failed,
     Cancelled,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observation {
     pub binding: Binding,
     pub native_session_id: String,
@@ -77,13 +79,13 @@ pub struct Observation {
     pub observed_at_ms: u64,
     pub terminal: Option<Terminal>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LaunchReply {
     Accepted(Observation),
     Rejected,
     LostReply,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CancelReply {
     Acknowledged,
     LostReply,
@@ -95,13 +97,13 @@ pub trait Peer {
     fn discover(&mut self, binding: &Binding) -> Vec<Observation>;
     fn cancel(&mut self, binding: &Binding, session_id: &str) -> CancelReply;
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Reachability {
     Online,
     Offline,
     Unknown,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Presence {
     pub host_id: String,
     pub workspace_id: String,
@@ -118,7 +120,7 @@ impl Presence {
             && now <= self.valid_until_ms
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Execution {
     Queued,
     Scheduled,
@@ -128,14 +130,14 @@ pub enum Execution {
     Terminal(Terminal),
     CancelledBeforeDispatch,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cancellation {
     None,
     Requested,
     Acknowledged,
     ObservedTerminal,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub binding: Binding,
     pub execution: Execution,
@@ -154,9 +156,9 @@ impl Snapshot {
     }
 }
 /// Receipts deliberately contain correlation and lifecycle metadata only; no peer text.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
-    pub version: &'static str,
+    pub version: String,
     pub snapshot: Snapshot,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,15 +175,16 @@ pub enum Error {
     Unknown,
     Unsupported,
     Shutdown,
+    Storage,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EventKind {
     Started,
     Progress,
     Terminal(Terminal),
     Unsupported,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub version: String,
     pub observation: Observation,
@@ -189,7 +192,9 @@ pub struct Event {
     pub encoded_size: usize,
 }
 
-pub struct Adapter<V = Deny> {
+pub struct Adapter<V = Deny, S = Memory> {
+    store: S,
+    generation: u64,
     verifier: V,
     entries: BTreeMap<String, Snapshot>,
     receipts: VecDeque<Receipt>,
@@ -203,9 +208,26 @@ impl Adapter<Deny> {
         Self::new(Deny, max_entries, max_receipts, max_age_ms)
     }
 }
-impl<V: Verifier> Adapter<V> {
+impl<V: Verifier> Adapter<V, Memory> {
     pub fn new(
         verifier: V,
+        max_entries: usize,
+        max_receipts: usize,
+        max_age_ms: u64,
+    ) -> Result<Self, Error> {
+        Self::with_storage(
+            verifier,
+            Memory::default(),
+            max_entries,
+            max_receipts,
+            max_age_ms,
+        )
+    }
+}
+impl<V: Verifier, S: Storage> Adapter<V, S> {
+    pub fn with_storage(
+        verifier: V,
+        mut store: S,
         max_entries: usize,
         max_receipts: usize,
         max_age_ms: u64,
@@ -218,15 +240,42 @@ impl<V: Verifier> Adapter<V> {
         {
             return Err(Error::Malformed);
         }
+        let config = (max_entries, max_receipts, max_age_ms);
+        let (mut generation, mut state) = store.load()?;
+        if state.config.is_none() {
+            state.config = Some(config);
+            generation = store.compare_and_swap(generation, &state)?;
+        }
+        if state.config != Some(config) {
+            return Err(Error::Conflict);
+        }
         Ok(Self {
+            store,
+            generation,
             verifier,
-            entries: BTreeMap::new(),
-            receipts: VecDeque::new(),
+            entries: state.entries,
+            receipts: state.receipts,
             max_entries,
             max_receipts,
             closed: false,
             max_age_ms,
         })
+    }
+    fn refresh(&mut self) -> Result<(), Error> {
+        let (generation, state) = self.store.load()?;
+        self.generation = generation;
+        self.entries = state.entries;
+        self.receipts = state.receipts;
+        Ok(())
+    }
+    fn persist(&mut self) -> Result<(), Error> {
+        let state = Stored {
+            config: Some((self.max_entries, self.max_receipts, self.max_age_ms)),
+            entries: self.entries.clone(),
+            receipts: self.receipts.clone(),
+        };
+        self.generation = self.store.compare_and_swap(self.generation, &state)?;
+        Ok(())
     }
     fn writable(&self) -> Result<(), Error> {
         if self.closed {
@@ -256,20 +305,35 @@ impl<V: Verifier> Adapter<V> {
         }
         Ok(value.clone())
     }
-    fn put(&mut self, value: Snapshot) -> Snapshot {
+    fn put(&mut self, value: Snapshot) -> Result<Snapshot, Error> {
         self.entries
             .insert(value.binding.operation_id.clone(), value.clone());
         self.receipts.push_back(Receipt {
-            version: VERSION,
+            version: VERSION.into(),
             snapshot: value.clone(),
         });
-        value
+        self.persist()?;
+        Ok(value)
     }
     pub fn snapshot(&self, binding: &Binding) -> Result<Snapshot, Error> {
-        self.get(binding)
+        let (_, state) = self.store.load()?;
+        let value = state
+            .entries
+            .get(&binding.operation_id)
+            .ok_or(Error::NotFound)?;
+        if &value.binding != binding {
+            return Err(Error::Conflict);
+        }
+        Ok(value.clone())
+    }
+    pub fn try_drain(&mut self) -> Result<Vec<Receipt>, Error> {
+        self.refresh()?;
+        let result = self.receipts.drain(..).collect();
+        self.persist()?;
+        Ok(result)
     }
     pub fn drain(&mut self) -> Vec<Receipt> {
-        self.receipts.drain(..).collect()
+        self.try_drain().expect("receipt storage failed closed")
     }
     pub fn shutdown(&mut self) {
         self.closed = true;
@@ -281,6 +345,7 @@ impl<V: Verifier> Adapter<V> {
         now: u64,
         peer: &mut P,
     ) -> Result<Snapshot, Error> {
+        self.refresh()?;
         if request.version != VERSION {
             return Err(Error::Malformed);
         }
@@ -311,15 +376,22 @@ impl<V: Verifier> Adapter<V> {
         if presence.ready(&value.binding, now)
             && now.saturating_sub(presence.observed_at_ms) <= self.max_age_ms
         {
-            self.launch(&mut value, now, peer);
+            self.launch(&mut value, now, peer)?;
         }
-        Ok(self.put(value))
+        self.put(value)
     }
-    fn launch<P: Peer>(&mut self, value: &mut Snapshot, now: u64, peer: &mut P) {
+    fn launch<P: Peer>(
+        &mut self,
+        value: &mut Snapshot,
+        now: u64,
+        peer: &mut P,
+    ) -> Result<(), Error> {
         value.execution = Execution::Scheduled;
         // Retain intent before entering the peer, including if a peer panics.
         self.entries
             .insert(value.binding.operation_id.clone(), value.clone());
+        self.persist()?;
+        self.authorized(&value.binding, Action::Launch)?;
         // There is no retry loop. Any unbound accepted reply remains uncertain.
         match peer.launch(&value.binding) {
             LaunchReply::Rejected => value.execution = Execution::Rejected,
@@ -329,6 +401,7 @@ impl<V: Verifier> Adapter<V> {
                 let _ = Self::observe(value, observation, now, self.max_age_ms);
             }
         }
+        Ok(())
     }
     pub fn dispatch<P: Peer>(
         &mut self,
@@ -337,6 +410,7 @@ impl<V: Verifier> Adapter<V> {
         now: u64,
         peer: &mut P,
     ) -> Result<Snapshot, Error> {
+        self.refresh()?;
         self.authorized(binding, Action::Launch)?;
         self.writable()?;
         let mut value = self.get(binding)?;
@@ -346,8 +420,8 @@ impl<V: Verifier> Adapter<V> {
         {
             return Ok(value);
         }
-        self.launch(&mut value, now, peer);
-        Ok(self.put(value))
+        self.launch(&mut value, now, peer)?;
+        self.put(value)
     }
     fn observe(
         value: &mut Snapshot,
@@ -406,6 +480,7 @@ impl<V: Verifier> Adapter<V> {
         now: u64,
         peer: &mut P,
     ) -> Result<Snapshot, Error> {
+        self.refresh()?;
         self.authorized(binding, Action::Reconcile)?;
         self.writable()?;
         let mut value = self.get(binding)?;
@@ -416,7 +491,7 @@ impl<V: Verifier> Adapter<V> {
         // The entire discovery result must be exact and unique; never select a convenient match.
         if observations.len() != 1 {
             value.execution = Execution::Unknown;
-            self.put(value);
+            self.put(value)?;
             return Err(if observations.is_empty() {
                 Error::Unknown
             } else {
@@ -429,9 +504,10 @@ impl<V: Verifier> Adapter<V> {
             now,
             self.max_age_ms,
         )?;
-        Ok(self.put(value))
+        self.put(value)
     }
     pub fn event(&mut self, binding: &Binding, event: Event, now: u64) -> Result<Snapshot, Error> {
+        self.refresh()?;
         self.writable()?;
         if event.version != VERSION
             || event.encoded_size == 0
@@ -454,9 +530,10 @@ impl<V: Verifier> Adapter<V> {
             return Err(Error::Unknown);
         }
         Self::observe(&mut value, event.observation, now, self.max_age_ms)?;
-        Ok(self.put(value))
+        self.put(value)
     }
     pub fn cancel<P: Peer>(&mut self, binding: &Binding, peer: &mut P) -> Result<Snapshot, Error> {
+        self.refresh()?;
         self.authorized(binding, Action::Cancel)?;
         self.writable()?;
         let mut value = self.get(binding)?;
@@ -471,13 +548,15 @@ impl<V: Verifier> Adapter<V> {
                     value.cancel_dispatched = true;
                     self.entries
                         .insert(binding.operation_id.clone(), value.clone());
+                    self.persist()?;
+                    self.authorized(binding, Action::Cancel)?;
                     if peer.cancel(binding, session) == CancelReply::Acknowledged {
                         value.cancellation = Cancellation::Acknowledged;
                     }
                 }
             }
         }
-        Ok(self.put(value))
+        self.put(value)
     }
 }
 

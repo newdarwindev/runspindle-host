@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "evidence_class": "component",
+  "contract": "runspindle.integration.v1",
+  "contract_commit": "96299842505ce7662178b7c7b00fd31f6c2754f0",
+  "status": "passed",
+  "tests": {
+    "rust_unit": 1,
+    "existing_lifecycle": 18,
+    "durable": 8,
+    "python_fixture": 7
+  },
+  "commands": [
+    "cargo test --locked --offline",
+    "cargo clippy --locked --offline --all-targets -- -D warnings",
+    "cargo fmt --all -- --check",
+    "python3 tools/check_durable_mutations.py",
+    "python3 -m unittest discover -s tests -p test_*.py",
+    "python3 tools/check_scaffold.py"
+  ],
+  "mutations": {
+    "evidence_class": "component_mutation",
+    "results": [
+      {
+        "mutation": "duplicate_dispatch",
+        "behavioral_failure_observed": true
+      },
+      {
+        "mutation": "session_rebinding",
+        "behavioral_failure_observed": true
+      }
+    ]
+  },
+  "dependency_inventory": "docs/durable-dependencies.json",
+  "preparation_sequence_note": "Initial compilation and initial tests preceded inventory recording. All retained verification was rerun offline after recording exact crate archives, bundled SQLite bytes, notices and native Rust toolchain. Initial runs do not demonstrate the preparation-order criterion.",
+  "not_exercised": [
+    "native app-server",
+    "Temporal bridge (core-owned)",
+    "power loss/filesystem durability",
+    "production/live acceptance"
+  ],
+  "remaining_gaps": [
+    "native protocol source and rights qualification",
+    "capture/text transfer/submission",
+    "cross-app fencing"
+  ]
+}
