@@ -6,6 +6,15 @@
     "notices": "licenses/dependencies"
   },
   "license_status": "No blanket license is granted to imported material. See LEGAL.md.",
+  "native_transport_source": {
+    "classification": "original_stdio_transport_SQLite_identity_bridge_and_synthetic_tests",
+    "legacy_executable_import": "none",
+    "pin": "docs/native-protocol-pin.json",
+    "protocol_repository": "https://github.com/openai/codex",
+    "release_source_commit": "d32063f96c2dff1dc96af839b3952abb6acfeda4",
+    "schema_source_import": "hashes_only_no_generated_source_copied",
+    "source_binary_correspondence": "not_independently_verified"
+  },
   "new_files": "Original durable lifecycle adapter, bounded SQLite storage and scripted peer tests. No legacy executable source/history imported.",
   "provenance_policy": "Public IDs resolve to a privately retained source record containing repository, exact commit, path, source hash and review notes. Private repository names, URLs and operational details are omitted.",
   "runtime_contract": {

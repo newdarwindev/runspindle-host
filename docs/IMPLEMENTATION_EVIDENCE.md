@@ -31,3 +31,15 @@ capability qualification; durable storage and fresh-process cancellation/recover
 complete wire sanitization and raw input parser; capture/text transfer/submission
 selection. Shared native semantic mappings are agreed but JSON wire conformance
 is unclaimed. These gaps keep the full issues and operational acceptance blocked.
+
+The new native metadata transport candidate is specified in
+[the stdio mapping](../specs/native-stdio.md), with evidence in
+[native-transport-tests.json](native-transport-tests.json). Empty native thread
+creation/readback is separate from task execution and durable continuity.
+
+The native session preparation transport is now connected to the existing durable
+lifecycle by [NativeBridge](../specs/native-bridge.md). Actual native metadata
+evidence includes a real returned thread ID persisted under exact Binding in
+SQLite and read by a separate process. Scripted turn/item/restart behavior remains
+separate; task execution, task terminal propagation and bridge interrupts remain
+unsupported.

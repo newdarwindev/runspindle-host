@@ -19,7 +19,7 @@ pub struct Binding {
     pub lease_epoch: u64,
 }
 impl Binding {
-    fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         [
             &self.task_id,
             &self.operation_id,

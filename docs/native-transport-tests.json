@@ -1,0 +1,102 @@
+{
+  "base_hygiene_sha": "64d8a5f5b3299552f6e29c00e797bf8411f0be95",
+  "code_sha256": {
+    "examples/native_probe.rs": "f75dd2ef5f2b45aa5fab590b0bcbcf2cddefbdef9e2e614d5b033d16b5cfae1f",
+    "src/lib.rs": "2a67813f722be1b70f20dc632f64da18a7567e66bf82ba6cafc60c09c6e6ed77",
+    "src/lifecycle.rs": "ec105d506157e8cf7e111b47df268f63a77ff4f09aba32f1698ce5a8a8f4d493",
+    "src/native.rs": "f25b0e4c88cc61daa55d38c93d1c48f390aca777d606fd9a16a346dba72cc656",
+    "src/native_bridge.rs": "b956f8b8d83cbee5255e20e81db96e4df41c95d5535a7594ffb4e42622df8a73",
+    "tests/native_bridge.rs": "e926b6a49e994527c3a1aae934d4b77296a364654df53bddbc5b28ca0f6a1fe3",
+    "tests/test_native_pin.py": "a23a546e482210eb3fc83728c10c2db9a705c1d992732405072a020a35dcbacc",
+    "tools/check_native_bridge_mutations.py": "14cf843effd8b9ebde086b7355610f5ebb608fa2bfd917e8ee66e72cb427acba",
+    "tools/check_native_mutations.py": "bd81e93b4dbfdd990db169e11bb7e76064226d0629941394c24f57b9bf73233b"
+  },
+  "criterion_ledger": {
+    "bounded_messages_and_buffering": "passed_scripted",
+    "configured_local_pins": "passed_before_journal_and_lazy_transport_factory",
+    "duplicate_reordered_event_sequencing": "passed_scripted_metadata_identity_order_fences;native_freshness_replay_unqualified",
+    "durable_binding_session_turn_item_mapping": "passed_bounded_session_preparation_actual_native_SQLite;turn_item_metadata_scripted_SQLite;task_execution_unsupported",
+    "github_required_check": "blocked_zero_registered_runners",
+    "issue8_and_parent_completion": "blocked",
+    "lost_launch_reply_recovery_without_relaunch": "passed_saved_native_ID_recovery_scripted_twice;missing_ID_stays_Unknown_without_relaunch;native_operation_discovery_blocked",
+    "malformed_oversized_wrong_reply_ids": "passed_scripted",
+    "native_cancel_race_and_terminal": "blocked_bridge_interrupt_and_task_terminal_unsupported;scripted_unsolicited_metadata_cannot_expand_authority",
+    "native_cross_platform_support": "blocked_linux_windows_unqualified",
+    "native_receive_commit_uncertainty": "passed_scripted_real_SQLite_and_fresh_process_unknown_fence_twice",
+    "native_source_stream_poisoning": "passed_closed_or_overflow_stream_cannot_emit_queued_notice",
+    "native_thread_identity_readback": "passed_native_metadata_and_actual_SQLite_separate_process_readback_twice",
+    "shutdown_lost_reply_no_same_connection_retry": "passed_scripted_twice",
+    "supported_protocol_and_schema_pin": "passed_local_identity_source_correspondence_unverified"
+  },
+  "evidence_class": "bounded_native_session_preparation_transport_and_durable_identity_candidate",
+  "native_bridge_interrupt": "unsupported",
+  "native_metadata": {
+    "boundary": "actual local pinned app-server stdio through NativeBridge and existing Adapter into actual SQLite, under macOS sandbox-exec deny network, empty environment/disposable HOME/CODEX_HOME",
+    "executable_sha256": "739cda86e15d30a6e2b40cf8dcbbfb988aaf48b305b27065573bb8e9fd41d002",
+    "not_claimed": [
+      "provider_call",
+      "task_execution",
+      "task_terminal_promotion",
+      "native_turn_item_observation",
+      "authorized_native_interrupt",
+      "actual_native_restart_recovery",
+      "native_notification_replay_or_sequence",
+      "transport_authentication",
+      "live_acceptance"
+    ],
+    "observations": [
+      "initialize pinned version",
+      "actual empty ephemeral thread/start returns 36-byte native id",
+      "returned ID persisted with exact Binding in native journal and existing durable Adapter",
+      "thread/read returns identical native id",
+      "separate child process independently reads both SQLite journals and compares exact binding/native ID",
+      "no task or turn submission port",
+      "private process directory and SQLite files removed after drop"
+    ],
+    "platform": "aarch64-apple-darwin",
+    "repeat_runs": 2,
+    "source_binary_correspondence": "not_independently_verified",
+    "status": "passed",
+    "trusted_clock": "explicit synthetic host observation clock, no native freshness claim"
+  },
+  "production_activation": "blocked",
+  "protocol_version": "0.169.0",
+  "schema_version": 1,
+  "scripted": {
+    "bridge": {
+      "independent_observations": "separate scripted peer SQLite call/effect ledger plus actual child process exits and independent journal readers",
+      "mutations": {
+        "receive_fence_removal": "behavioral_failure_observed",
+        "relaunch_reservation_bypass": "behavioral_failure_observed",
+        "task_terminal_promotion": "behavioral_failure_observed"
+      },
+      "repeat_runs": 2,
+      "scenarios": [
+        "lost start reply before native ID persisted remains Unknown with one start effect",
+        "native ID saved before Adapter reply loss recovered by exact thread/read with one start effect",
+        "separate-process turn/item identity persistence and order fencing",
+        "metadata completion never promotes task terminal",
+        "observed turn never authorizes native interruption before or after restart",
+        "durable receive crash fence remains Unknown",
+        "SQLite save failure retains consumed notice without rereading peer",
+        "receipt backpressure retains pending observation across restart",
+        "configured local pin mismatch precedes SQLite and lazy IO factory",
+        "reopened task/revision/policy/lease mismatch and requested wrong operation reject before native calls"
+      ],
+      "storage": "actual SQLite host and native journal tables",
+      "test_cases_including_child_harness": 12
+    },
+    "independent_observations": "scripted child records actual methods to separate private call ledger; forbidden retry counts asserted",
+    "mutations": {
+      "duplicate_json_member_acceptance": "behavioral_failure_observed",
+      "frame_limit_removal": "behavioral_failure_observed",
+      "thread_rebinding": "behavioral_failure_observed"
+    },
+    "status": "passed",
+    "tests": 11
+  },
+  "source_commit": "d32063f96c2dff1dc96af839b3952abb6acfeda4",
+  "system_aggregate": "blocked",
+  "task_execution": "unsupported",
+  "task_terminal_propagation": "unsupported"
+}

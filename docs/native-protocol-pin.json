@@ -1,0 +1,27 @@
+{
+  "binary": {
+    "platform": "aarch64-apple-darwin",
+    "qualification": "local installed binary; release-source correspondence not independently verified",
+    "sha256": "739cda86e15d30a6e2b40cf8dcbbfb988aaf48b305b27065573bb8e9fd41d002"
+  },
+  "repository": "https://github.com/openai/codex",
+  "schema_generation": "codex app-server generate-json-schema (non-experimental)",
+  "schema_version": 1,
+  "schemas": {
+    "v1/InitializeParams.json": "c608ff6bdd94e661423dca9b44cd1dcea7eac610f74e1310284c61eab64280bc",
+    "v1/InitializeResponse.json": "62ad689c2cb6379913c1d72749cfd8de5089d35760214123518eb92eef11acc9",
+    "v2/ItemCompletedNotification.json": "528e21e0d9b2679ba4e5c55d95fdfd23f396977536cae51480fd833acd3061b4",
+    "v2/ItemStartedNotification.json": "8e7607fcf44ec5a6f29a711d30ed7614431e053ac6b991d96029401a7bb0770f",
+    "v2/ThreadReadParams.json": "dfe040c6ac71d30795b8be3f3ff232e66f362a37f883b491e5d1ea367f470db4",
+    "v2/ThreadReadResponse.json": "297065118a91860d06169a535f31447f893a8edd5c88e5ab5e8932310bc64291",
+    "v2/ThreadStartParams.json": "e9c6d3cc18d049bfbc0249add3808fb8e5a27e1a0b5a423767aafbc3859a9428",
+    "v2/ThreadStartResponse.json": "e54031895f7552122a79123a74bf398deb4ebf97227accc7683bae08400d3e65",
+    "v2/ThreadStartedNotification.json": "d745023b8b64db69138fe32a42c12aafe3c367678097604803d33566a8bdc184",
+    "v2/TurnCompletedNotification.json": "c4a22a9a8c1fad4c2dceda0d4d1593ce7f2435107d6219fb678925d18f915f6b",
+    "v2/TurnInterruptParams.json": "6dff382dae73d1dbc58406ed045605f647e7a49660e2540fbd2c6c24d60c5f2b",
+    "v2/TurnInterruptResponse.json": "531de6be06fe979b5963f249bab82498a175e614bf65ac12fb2e849dfe60bcf1",
+    "v2/TurnStartedNotification.json": "b386381e73a8f75578310d53cba3a9384ab728f219801284d948bd9a82fc772c"
+  },
+  "source_commit": "d32063f96c2dff1dc96af839b3952abb6acfeda4",
+  "version": "0.169.0"
+}

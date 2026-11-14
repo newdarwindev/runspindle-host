@@ -37,3 +37,11 @@ existing acceptance results or operational permissions.
 The additional [durable library mapping](durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
 scripted-peer tests. Earlier process-local evidence remains separate; actual native
 protocol, production durability and live acceptance remain unqualified.
+
+The [native stdio metadata candidate](native-stdio.md) adds bounded pinned transport
+with separate scripted and actual empty-thread observations. Task execution,
+native durable recovery and live acceptance remain blocked.
+
+The [native durable identity bridge](native-bridge.md) now connects that transport
+to the existing lifecycle as session preparation only, with actual SQLite identity
+records and conservative uncertain recovery; task execution remains unsupported.
