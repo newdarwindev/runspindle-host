@@ -1,0 +1,31 @@
+{
+  "evidence_class": "source_candidate_only",
+  "base_revision": "92061be0d0bde164287fb4ce10ee9f21eb723730",
+  "passed": [
+    "Python scaffold structure",
+    "optimized Python mutation-checker rejection of false evidence",
+    "52 Python tests normally and under optimized Python",
+    "pinned whole-tree static quality: zero new diagnostics; historical baseline unchanged"
+  ],
+  "authored": [
+    "four owned-child OS observation Rust tests",
+    "unknown-cleanup guard mutation"
+  ],
+  "not_run": [
+    "Rust compilation",
+    "Rust formatting",
+    "Rust tests",
+    "Rust Clippy",
+    "behavioral Rust mutations",
+    "actual pinned native peer",
+    "live/provider acceptance"
+  ],
+  "blocked": [
+    "qualified Rust execution lane required before readiness"
+  ],
+  "sha256": {
+    "src/native.rs": "9ff9742b5cda1e8bd12cc3f43d84de2576dca7586d106049d4d77362b34d2391",
+    "tools/check_native_mutations.py": "be1639d9a6f1bc9ffe9f32d97806549223558a1a1e48b5c4a07117ca680d67b9",
+    "specs/observed-child-shutdown.md": "9d3f8a3c04411a88813e0884e69c69c6c7b4e1321a83697c49190d142d79e5b5"
+  }
+}

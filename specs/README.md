@@ -45,3 +45,6 @@ native durable recovery and live acceptance remain blocked.
 The [native durable identity bridge](native-bridge.md) now connects that transport
 to the existing lifecycle as session preparation only, with actual SQLite identity
 records and conservative uncertain recovery; task execution remains unsupported.
+
+[Owned-child shutdown observations](observed-child-shutdown.md) are an uncompiled
+source candidate. Existing native evidence does not qualify this revision.

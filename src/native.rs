@@ -249,6 +249,48 @@ fn notice(value: &Value, thread: &str) -> Result<NativeNotice, WireError> {
     })
 }
 
+/// Owned OS child status only; never native task completion or cancellation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChildExit {
+    Exited {
+        success: bool,
+        code: Option<i32>,
+    },
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShutdownReceipt {
+    pub process_id: u32,
+    pub termination_requested: bool,
+    pub kill_signal_sent: bool,
+    pub child_exit: ChildExit,
+    pub io_threads_stopped: bool,
+}
+
+fn observe_exit(child: &mut Child, deadline: Instant) -> ChildExit {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return ChildExit::Exited {
+                    success: status.success(),
+                    code: status.code(),
+                };
+            }
+            Err(_) => return ChildExit::Unknown,
+            Ok(None) => {}
+        }
+        if Instant::now() >= deadline {
+            return ChildExit::Unknown;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn cleanup_permitted(receipt: ShutdownReceipt) -> bool {
+    matches!(receipt.child_exit, ChildExit::Exited { .. }) && receipt.io_threads_stopped
+}
+
 type WriteRequest = (Vec<u8>, mpsc::Sender<Result<(), WireError>>);
 
 pub struct StdioSession {
@@ -261,6 +303,8 @@ pub struct StdioSession {
     initialized: bool,
     closed: bool,
     directory: PathBuf,
+    io_threads: Vec<std::thread::JoinHandle<()>>,
+    shutdown_receipt: Option<ShutdownReceipt>,
 }
 impl StdioSession {
     /// The caller provides a fresh private directory, never a real Codex home/workspace.
@@ -326,7 +370,7 @@ impl StdioSession {
         let mut stdin = child.stdin.take().ok_or(WireError::Io)?;
         let (writer, requests) =
             mpsc::sync_channel::<(Vec<u8>, mpsc::Sender<Result<(), WireError>>)>(1);
-        std::thread::spawn(move || {
+        let writer_thread = std::thread::spawn(move || {
             while let Ok((bytes, done)) = requests.recv() {
                 let result = stdin.write_all(&bytes).map_err(|_| WireError::Io);
                 let failed = result.is_err();
@@ -341,7 +385,7 @@ impl StdioSession {
         let (sender, incoming) = mpsc::sync_channel(MAX_PENDING);
         let reader_failed = Arc::new(AtomicBool::new(false));
         let failed_reader = Arc::clone(&reader_failed);
-        std::thread::spawn(move || {
+        let reader_thread = std::thread::spawn(move || {
             let mut reader = BufReader::new(output);
             loop {
                 let frame = read_frame(&mut reader);
@@ -362,6 +406,8 @@ impl StdioSession {
             initialized: false,
             closed: false,
             directory,
+            io_threads: vec![writer_thread, reader_thread],
+            shutdown_receipt: None,
         })
     }
     fn send(&mut self, value: Value) -> Result<(), WireError> {
@@ -524,17 +570,55 @@ impl StdioSession {
         }
         Some(result)
     }
-    pub fn close(&mut self) {
+    /// Stop only the child this session spawned. Unknown outcomes stay unknown;
+    /// repeated calls return the same receipt rather than retrying termination.
+    pub fn close_observed(&mut self) -> ShutdownReceipt {
         self.closed = true;
         self.input.take();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(receipt) = self.shutdown_receipt {
+            return receipt;
+        }
+        let deadline = Instant::now() + DEADLINE;
+        let mut receipt = ShutdownReceipt {
+            process_id: self.child.id(),
+            termination_requested: false,
+            kill_signal_sent: false,
+            child_exit: observe_exit(&mut self.child, Instant::now()),
+            io_threads_stopped: false,
+        };
+        if receipt.child_exit == ChildExit::Unknown {
+            receipt.termination_requested = true;
+            receipt.kill_signal_sent = self.child.kill().is_ok();
+            receipt.child_exit = observe_exit(&mut self.child, deadline);
+        }
+        while !self.io_threads.iter().all(|thread| thread.is_finished())
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        receipt.io_threads_stopped = self.io_threads.iter().all(|thread| thread.is_finished());
+        if receipt.io_threads_stopped {
+            for thread in self.io_threads.drain(..) {
+                if thread.join().is_err() {
+                    receipt.io_threads_stopped = false;
+                }
+            }
+        }
+        self.shutdown_receipt = Some(receipt);
+        receipt
+    }
+
+    pub fn close(&mut self) {
+        let _ = self.close_observed();
     }
 }
 impl Drop for StdioSession {
     fn drop(&mut self) {
-        self.close();
-        let _ = fs::remove_dir_all(&self.directory);
+        let receipt = self.close_observed();
+        // Never remove evidence while child exit or local I/O shutdown is unknown.
+        if cleanup_permitted(receipt) {
+            let _ = fs::remove_dir_all(&self.directory);
+        }
     }
 }
 
@@ -575,6 +659,97 @@ for line in sys.stdin:
             .unwrap();
         (StdioSession::from_child(child, directory).unwrap(), ledger)
     }
+    #[test]
+    fn native_owned_child_exit_is_observed_and_repeated_close_is_idempotent() {
+        let (mut peer, ledger) =
+            scripted("  print(json.dumps({'id':r['id'],'result':{}}),flush=True)");
+        peer.initialize().unwrap();
+        // The response fences the preceding initialized notification and its ledger write.
+        peer.rpc("fixture/barrier", json!({})).unwrap();
+        let pid = peer.child.id();
+        let before = fs::read_to_string(&ledger).unwrap();
+        let started = Instant::now();
+        let receipt = peer.close_observed();
+        assert!(started.elapsed() < Duration::from_secs(7));
+        assert_eq!(receipt.process_id, pid);
+        assert!(matches!(receipt.child_exit, ChildExit::Exited { .. }));
+        assert!(receipt.io_threads_stopped);
+        // Read the owned OS handle independently of the returned receipt.
+        assert!(peer.child.try_wait().unwrap().is_some());
+        assert_eq!(peer.close_observed(), receipt);
+        assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+        assert_eq!(fs::read_to_string(&ledger).unwrap(), before);
+        let directory = peer.directory.clone();
+        drop(peer);
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn native_unresponsive_child_is_terminated_not_reported_as_task_completion() {
+        let (mut peer, ledger) = scripted(
+            "  import time\n  with open(sys.argv[1]+'.blocked','w') as f: f.write('entered')\n  time.sleep(60)",
+        );
+        peer.initialize().unwrap();
+        // Request a method that blocks in the child, without waiting for its reply.
+        peer.send(json!({"id": 90, "method": "fixture/block", "params": {}}))
+            .unwrap();
+        let marker = ledger.with_file_name("calls.blocked");
+        let entry_deadline = Instant::now() + DEADLINE;
+        while fs::read_to_string(&marker).ok().as_deref() != Some("entered") {
+            assert!(Instant::now() < entry_deadline, "child did not enter blocking path");
+            assert!(peer.child.try_wait().unwrap().is_none());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(peer.child.try_wait().unwrap().is_none());
+        let receipt = peer.close_observed();
+        assert!(receipt.termination_requested);
+        assert!(receipt.kill_signal_sent);
+        assert!(matches!(receipt.child_exit, ChildExit::Exited { .. }));
+        assert!(peer.child.try_wait().unwrap().is_some());
+        assert_eq!(
+            peer.interrupt("thread-native", "turn-native"),
+            Err(WireError::Closed)
+        );
+    }
+
+    #[test]
+    fn native_unknown_exit_observation_never_authorizes_directory_cleanup() {
+        let (mut peer, ledger) = scripted("  pass");
+        peer.initialize().unwrap();
+        assert_eq!(
+            observe_exit(&mut peer.child, Instant::now()),
+            ChildExit::Unknown
+        );
+        let directory = peer.directory.clone();
+        // Fault injection affects only the retained receipt, never leaves a child alive.
+        peer.child.kill().unwrap();
+        assert!(matches!(
+            observe_exit(&mut peer.child, Instant::now() + DEADLINE),
+            ChildExit::Exited { .. }
+        ));
+        let mut receipt = peer.close_observed();
+        receipt.child_exit = ChildExit::Unknown;
+        peer.shutdown_receipt = Some(receipt);
+        drop(peer);
+        assert!(directory.is_dir());
+        assert!(ledger.is_file());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_unfinished_io_prevents_cleanup_even_after_child_exit() {
+        let (mut peer, ledger) = scripted("  pass");
+        peer.initialize().unwrap();
+        let mut receipt = peer.close_observed();
+        assert!(matches!(receipt.child_exit, ChildExit::Exited { .. }));
+        receipt.io_threads_stopped = false;
+        peer.shutdown_receipt = Some(receipt);
+        let directory = peer.directory.clone();
+        drop(peer);
+        assert!(ledger.is_file());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn native_frames_are_bounded_and_fail_closed() {
         for bytes in [
