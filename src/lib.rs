@@ -3,6 +3,7 @@
 
 pub mod lifecycle;
 pub mod native;
+pub mod native_bridge;
 pub mod storage;
 #[derive(Debug, PartialEq)]
 pub enum ReadinessError {

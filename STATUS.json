@@ -11,11 +11,15 @@
   "live_acceptance": "not_run",
   "native_protocol_qualification": "blocked",
   "native_transport_candidate": {
-    "durable_native_recovery": "blocked",
+    "durable_bridge_scripted": "passed_actual_SQLite_fresh_process_negative_tests",
+    "durable_native_binding": "passed_empty_thread_SQLite_independent_process_readback_twice",
+    "durable_native_recovery": "blocked_actual_ephemeral_restart_and_operation_discovery",
     "evidence": "docs/native-transport-tests.json",
-    "implementation": "bounded_metadata_only_stdio",
+    "implementation": "bounded_stdio_with_session_preparation_durable_identity_bridge",
+    "native_bridge_interrupt": "unsupported",
     "native_metadata": "passed_twice_outbound_denied_macos",
-    "native_task_execution": "blocked",
+    "native_task_execution": "unsupported",
+    "native_task_terminal_propagation": "unsupported",
     "operational_activation": "blocked",
     "scripted_tests": "passed",
     "source_binary_correspondence": "unverified"

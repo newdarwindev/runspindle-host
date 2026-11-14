@@ -7,7 +7,7 @@
   },
   "license_status": "No blanket license is granted to imported material. See LEGAL.md.",
   "native_transport_source": {
-    "classification": "original_metadata_transport_and_synthetic_tests",
+    "classification": "original_stdio_transport_SQLite_identity_bridge_and_synthetic_tests",
     "legacy_executable_import": "none",
     "pin": "docs/native-protocol-pin.json",
     "protocol_repository": "https://github.com/openai/codex",

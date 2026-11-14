@@ -16,6 +16,7 @@
     "v2/ThreadReadResponse.json": "297065118a91860d06169a535f31447f893a8edd5c88e5ab5e8932310bc64291",
     "v2/ThreadStartParams.json": "e9c6d3cc18d049bfbc0249add3808fb8e5a27e1a0b5a423767aafbc3859a9428",
     "v2/ThreadStartResponse.json": "e54031895f7552122a79123a74bf398deb4ebf97227accc7683bae08400d3e65",
+    "v2/ThreadStartedNotification.json": "d745023b8b64db69138fe32a42c12aafe3c367678097604803d33566a8bdc184",
     "v2/TurnCompletedNotification.json": "c4a22a9a8c1fad4c2dceda0d4d1593ce7f2435107d6219fb678925d18f915f6b",
     "v2/TurnInterruptParams.json": "6dff382dae73d1dbc58406ed045605f647e7a49660e2540fbd2c6c24d60c5f2b",
     "v2/TurnInterruptResponse.json": "531de6be06fe979b5963f249bab82498a175e614bf65ac12fb2e849dfe60bcf1",

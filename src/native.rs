@@ -173,6 +173,82 @@ pub fn notification_ids(value: &Value, expected_thread: &str) -> Result<NativeId
 
 /// One request in flight. Overflow, foreign/duplicate reply, timeout and server requests
 /// poison the connection. Retry/relaunch is a lifecycle decision, never a transport action.
+/// Sanitized native notification, preserving only protocol identity and terminal status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeNotice {
+    ThreadStarted {
+        thread_id: String,
+    },
+    TurnStarted {
+        thread_id: String,
+        turn_id: String,
+    },
+    TurnCompleted {
+        thread_id: String,
+        turn_id: String,
+        terminal: crate::lifecycle::Terminal,
+    },
+    ItemStarted {
+        thread_id: String,
+        turn_id: String,
+        item_id: String,
+    },
+    ItemCompleted {
+        thread_id: String,
+        turn_id: String,
+        item_id: String,
+    },
+}
+impl NativeNotice {
+    pub fn thread_id(&self) -> &str {
+        match self {
+            Self::ThreadStarted { thread_id }
+            | Self::TurnStarted { thread_id, .. }
+            | Self::TurnCompleted { thread_id, .. }
+            | Self::ItemStarted { thread_id, .. }
+            | Self::ItemCompleted { thread_id, .. } => thread_id,
+        }
+    }
+}
+fn notice(value: &Value, thread: &str) -> Result<NativeNotice, WireError> {
+    let ids = notification_ids(value, thread)?;
+    Ok(match value["method"].as_str() {
+        Some("thread/started") => NativeNotice::ThreadStarted {
+            thread_id: ids.thread_id,
+        },
+        Some("turn/started") if value["params"]["turn"]["status"] == "inProgress" => {
+            NativeNotice::TurnStarted {
+                thread_id: ids.thread_id,
+                turn_id: ids.turn_id.ok_or(WireError::Malformed)?,
+            }
+        }
+        Some("turn/completed") => {
+            let terminal = match value["params"]["turn"]["status"].as_str() {
+                Some("completed") => crate::lifecycle::Terminal::Completed,
+                Some("failed") => crate::lifecycle::Terminal::Failed,
+                Some("interrupted") => crate::lifecycle::Terminal::Cancelled,
+                _ => return Err(WireError::Malformed),
+            };
+            NativeNotice::TurnCompleted {
+                thread_id: ids.thread_id,
+                turn_id: ids.turn_id.ok_or(WireError::Malformed)?,
+                terminal,
+            }
+        }
+        Some("item/started") => NativeNotice::ItemStarted {
+            thread_id: ids.thread_id,
+            turn_id: ids.turn_id.ok_or(WireError::Malformed)?,
+            item_id: ids.item_id.ok_or(WireError::Malformed)?,
+        },
+        Some("item/completed") => NativeNotice::ItemCompleted {
+            thread_id: ids.thread_id,
+            turn_id: ids.turn_id.ok_or(WireError::Malformed)?,
+            item_id: ids.item_id.ok_or(WireError::Malformed)?,
+        },
+        _ => return Err(WireError::Unsupported),
+    })
+}
+
 type WriteRequest = (Vec<u8>, mpsc::Sender<Result<(), WireError>>);
 
 pub struct StdioSession {
@@ -419,9 +495,34 @@ impl StdioSession {
         Ok(())
     }
     pub fn take_notification(&mut self, thread: &str) -> Option<Result<NativeIds, WireError>> {
+        if self.closed || self.reader_failed.load(Ordering::Acquire) {
+            self.close();
+            return Some(Err(WireError::Closed));
+        }
         self.notifications
             .pop_front()
             .map(|value| notification_ids(&value, thread))
+    }
+    /// Drain only sanitized notifications; unsolicited replies poison the stream.
+    pub fn next_notice(&mut self, thread: &str) -> Option<Result<NativeNotice, WireError>> {
+        if self.closed || self.reader_failed.load(Ordering::Acquire) {
+            self.close();
+            return Some(Err(WireError::Closed));
+        }
+        let frame = if let Some(value) = self.notifications.pop_front() {
+            Ok(value)
+        } else {
+            match self.incoming.try_recv() {
+                Ok(value) => value,
+                Err(mpsc::TryRecvError::Empty) => return None,
+                Err(_) => Err(WireError::Closed),
+            }
+        };
+        let result = frame.and_then(|value| notice(&value, thread));
+        if result.is_err() {
+            self.close();
+        }
+        Some(result)
     }
     pub fn close(&mut self) {
         self.closed = true;
@@ -566,6 +667,7 @@ for line in sys.stdin:
         ));
         assert!(peer.notifications.len() <= MAX_PENDING);
         assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+        assert_eq!(peer.next_notice("native-123"), Some(Err(WireError::Closed)));
         assert_eq!(
             fs::read_to_string(ledger)
                 .unwrap()
@@ -660,6 +762,19 @@ for line in sys.stdin:
                 .matches("thread/start")
                 .count(),
             1
+        );
+    }
+    #[test]
+    fn native_poisoned_stream_never_exposes_queued_identity_after_close() {
+        let (mut peer, _) = scripted("  print(json.dumps({'method':'turn/started','params':{'threadId':'native-123','turn':{'id':'native-turn','status':'inProgress'}}}),flush=True)\n  print(json.dumps({'id':r['id'],'result':{'thread':{'id':'native-123'}}}),flush=True)");
+        peer.initialize().unwrap();
+        peer.start_empty_thread().unwrap();
+        assert!(!peer.notifications.is_empty());
+        peer.close();
+        assert_eq!(peer.next_notice("native-123"), Some(Err(WireError::Closed)));
+        assert_eq!(
+            peer.take_notification("native-123"),
+            Some(Err(WireError::Closed))
         );
     }
 }

@@ -39,19 +39,21 @@ foreign thread. Raw content is not returned. The app-server lacks the trusted
 sequence/freshness fields expected by the lifecycle Event contract; local arrival
 order is not promoted to native freshness or an authoritative event sequence.
 
-The existing durable Adapter remains authoritative for task/binding/host/workspace/
-lease admission and uncertainty. This transport is deliberately not yet connected
-as its Peer: empty thread creation cannot stand for task execution, and app-server
-thread/start supplies no qualified operation-id discovery key. Losing the native
-launch reply before persisting the ID remains unresolved; creating another
-connection does not authorize relaunch. Native durable binding, lost-ack recovery,
-fresh-process native reconciliation and turn/item/terminal/cancel races remain
-blocked. Existing SQLite scripted-peer tests do not satisfy those native gates.
+The [durable identity bridge](native-bridge.md) now connects this transport to the
+existing Adapter as a session-preparation-only Peer. It persists actual native
+thread IDs under exact Binding and configured local host/workspace pins, retains
+bounded observed turn/item metadata, and fences uncertain launch/receive state.
+It cannot submit a task turn, promote a task terminal result or authorize native
+interrupts from observed metadata. A missing native start ID or unavailable
+thread/read remains Unknown across restart with no relaunch. The bridge's local
+observation counter is not a native event sequence. Native execution and broader
+acceptance remain blocked.
 
 Reproduce scripted tests and mutations with `python3 tools/validate.py` in the
 prepared isolated lane. For the opt-in macOS metadata probe, build with
 `cargo build --offline --locked --example native_probe`, then invoke
 `target/debug/examples/native_probe <pinned-codex-path> <fresh-private-directory>`
 inside an outbound-denied sandbox. This creates no turn and sends no prompt.
-Do not run it against a real home or workspace. The sanitized probe reports only
-ID length and equality; it never prints IDs, content or process logs.
+Do not run it against a real home or workspace. The sanitized probe exercises NativeBridge, actual SQLite and a separate child
+journal reader; it reports only ID length and equality. It never prints IDs,
+content or process logs.
