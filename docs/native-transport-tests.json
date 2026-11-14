@@ -1,0 +1,62 @@
+{
+  "base_hygiene_sha": "f06c865ae016ded434ddd3a0933fbba6e996eba2",
+  "code_sha256": {
+    "examples/native_probe.rs": "5e281a85562dcebf68ca12acb0bd46014a968a09833ce39c8e1e5fefbcbbef72",
+    "src/native.rs": "6a28a54f5efbef74ca3684fcab20f26e5d1862eba98d16c9b509c6340ee0f244",
+    "tests/test_native_pin.py": "a23a546e482210eb3fc83728c10c2db9a705c1d992732405072a020a35dcbacc",
+    "tools/check_native_mutations.py": "bd81e93b4dbfdd990db169e11bb7e76064226d0629941394c24f57b9bf73233b"
+  },
+  "criterion_ledger": {
+    "bounded_messages_and_buffering": "passed_scripted",
+    "duplicate_reordered_event_sequencing": "blocked_no_native_freshness_mapping",
+    "durable_binding_session_turn_item_mapping": "blocked_transport_not_connected_as_lifecycle_peer",
+    "github_required_check": "blocked_zero_registered_runners",
+    "issue8_and_parent_completion": "blocked",
+    "lost_launch_reply_recovery_without_relaunch": "blocked_native_operation_discovery_key_unqualified",
+    "malformed_oversized_wrong_reply_ids": "passed_scripted",
+    "native_cancel_race_and_terminal": "blocked_no_native_turn_submission",
+    "native_cross_platform_support": "blocked_linux_windows_unqualified",
+    "native_thread_identity_readback": "passed_native_metadata_twice",
+    "shutdown_lost_reply_no_same_connection_retry": "passed_scripted_twice",
+    "supported_protocol_and_schema_pin": "passed_local_identity_source_correspondence_unverified"
+  },
+  "evidence_class": "bounded_native_metadata_transport_candidate",
+  "native_metadata": {
+    "boundary": "actual local app-server stdio inside macOS sandbox-exec deny network; empty environment and disposable HOME/CODEX_HOME",
+    "executable_sha256": "739cda86e15d30a6e2b40cf8dcbbfb988aaf48b305b27065573bb8e9fd41d002",
+    "not_claimed": [
+      "provider_call",
+      "task_execution",
+      "native_turn_item_observation",
+      "native_durable_recovery",
+      "transport_authentication",
+      "live_acceptance"
+    ],
+    "observations": [
+      "initialize pinned version",
+      "empty ephemeral thread/start returns 36-byte native id",
+      "thread/read returns identical native id",
+      "turn submission API absent",
+      "private process directory removed after drop"
+    ],
+    "platform": "aarch64-apple-darwin",
+    "repeat_runs": 2,
+    "source_binary_correspondence": "not_independently_verified",
+    "status": "passed"
+  },
+  "production_activation": "blocked",
+  "protocol_version": "0.169.0",
+  "schema_version": 1,
+  "scripted": {
+    "independent_observations": "scripted child records actual methods to separate private call ledger; forbidden retry counts asserted",
+    "mutations": {
+      "duplicate_json_member_acceptance": "behavioral_failure_observed",
+      "frame_limit_removal": "behavioral_failure_observed",
+      "thread_rebinding": "behavioral_failure_observed"
+    },
+    "status": "passed",
+    "tests": 10
+  },
+  "source_commit": "d32063f96c2dff1dc96af839b3952abb6acfeda4",
+  "system_aggregate": "blocked"
+}

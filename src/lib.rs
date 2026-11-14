@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod lifecycle;
+pub mod native;
 pub mod storage;
 #[derive(Debug, PartialEq)]
 pub enum ReadinessError {

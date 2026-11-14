@@ -10,6 +10,16 @@
   "lifecycle_tests": "passed",
   "live_acceptance": "not_run",
   "native_protocol_qualification": "blocked",
+  "native_transport_candidate": {
+    "durable_native_recovery": "blocked",
+    "evidence": "docs/native-transport-tests.json",
+    "implementation": "bounded_metadata_only_stdio",
+    "native_metadata": "passed_twice_outbound_denied_macos",
+    "native_task_execution": "blocked",
+    "operational_activation": "blocked",
+    "scripted_tests": "passed",
+    "source_binary_correspondence": "unverified"
+  },
   "production_deployment": "not_run",
   "runner_capacity": "unverified",
   "selected_source_migration": "partial",

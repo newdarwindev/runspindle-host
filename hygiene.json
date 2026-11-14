@@ -122,6 +122,17 @@
         "tools/check_durable_mutations.py"
       ],
       "timeout_seconds": 600
+    },
+    {
+      "id": "native-mutations",
+      "command": [
+        "python3",
+        "tools/check_native_mutations.py"
+      ],
+      "required_files": [
+        "tools/check_native_mutations.py"
+      ],
+      "timeout_seconds": 600
     }
   ],
   "lockfiles": [
