@@ -1,5 +1,5 @@
 {
-  "base_hygiene_sha": "64d8a5f5b3299552f6e29c00e797bf8411f0be95",
+  "base_hygiene_sha": "e36df49667542b596c4a0a0cf6a3b30c453c7688",
   "code_sha256": {
     "examples/native_probe.rs": "f75dd2ef5f2b45aa5fab590b0bcbcf2cddefbdef9e2e614d5b033d16b5cfae1f",
     "src/lib.rs": "2a67813f722be1b70f20dc632f64da18a7567e66bf82ba6cafc60c09c6e6ed77",
@@ -7,9 +7,10 @@
     "src/native.rs": "f25b0e4c88cc61daa55d38c93d1c48f390aca777d606fd9a16a346dba72cc656",
     "src/native_bridge.rs": "b956f8b8d83cbee5255e20e81db96e4df41c95d5535a7594ffb4e42622df8a73",
     "tests/native_bridge.rs": "e926b6a49e994527c3a1aae934d4b77296a364654df53bddbc5b28ca0f6a1fe3",
+    "tests/test_native_mutation_guards.py": "9d540dc7c3c7e2a4fee7ec4ffb27c4ddecf23ee38e308b60449fb7e821b4c981",
     "tests/test_native_pin.py": "a23a546e482210eb3fc83728c10c2db9a705c1d992732405072a020a35dcbacc",
-    "tools/check_native_bridge_mutations.py": "14cf843effd8b9ebde086b7355610f5ebb608fa2bfd917e8ee66e72cb427acba",
-    "tools/check_native_mutations.py": "bd81e93b4dbfdd990db169e11bb7e76064226d0629941394c24f57b9bf73233b"
+    "tools/check_native_bridge_mutations.py": "b29f24257ac04f50a6cbd0bf76c87e3fdfa755b33054d3c7585f363ce66247c3",
+    "tools/check_native_mutations.py": "e7feedce057ad590fc450868f17cc45c45a2ff139184fe65dd03e66b6072bfee"
   },
   "criterion_ledger": {
     "bounded_messages_and_buffering": "passed_scripted",
@@ -29,6 +30,11 @@
     "supported_protocol_and_schema_pin": "passed_local_identity_source_correspondence_unverified"
   },
   "evidence_class": "bounded_native_session_preparation_transport_and_durable_identity_candidate",
+  "integration_update": {
+    "python_evidence": "Optimized subprocesses with synthetic Cargo results reject successful tests, compile failures and unrelated failures; accept only behavioral-failure output. This tests checker logic, not Rust mutations.",
+    "remaining": "Full Rust and actual mutation execution must be rerun on qualified runner for this candidate; historical native observations are not rerun or promoted by this update.",
+    "scope": "Hygiene integration and optimized-Python mutation-evidence guards only; runtime Rust unchanged."
+  },
   "native_bridge_interrupt": "unsupported",
   "native_metadata": {
     "boundary": "actual local pinned app-server stdio through NativeBridge and existing Adapter into actual SQLite, under macOS sandbox-exec deny network, empty environment/disposable HOME/CODEX_HOME",

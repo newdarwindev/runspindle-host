@@ -28,7 +28,8 @@ def main() -> None:
     }
     rows = []
     for name, (old, new) in mutations.items():
-        assert source.count(old) == 1, name
+        if source.count(old) != 1:
+            raise AssertionError(name)
         with tempfile.TemporaryDirectory(prefix="host-native-mutation-") as directory:
             root = Path(directory)
             for path in ("Cargo.toml", "Cargo.lock", "src"):
@@ -55,9 +56,12 @@ def main() -> None:
                 stderr=subprocess.STDOUT,
                 timeout=180,
             )
-            assert run.returncode != 0, name
-            assert "test result: FAILED" in run.stdout, run.stdout
-            assert "could not compile" not in run.stdout, run.stdout
+            if run.returncode == 0:
+                raise AssertionError(name)
+            if "test result: FAILED" not in run.stdout:
+                raise AssertionError(run.stdout)
+            if "could not compile" in run.stdout:
+                raise AssertionError(run.stdout)
             rows.append({"mutation": name, "behavioral_failure_observed": True})
     print(
         json.dumps({"evidence_class": "scripted_component_mutation", "results": rows})
