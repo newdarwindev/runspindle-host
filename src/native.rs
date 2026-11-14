@@ -252,10 +252,7 @@ fn notice(value: &Value, thread: &str) -> Result<NativeNotice, WireError> {
 /// Owned OS child status only; never native task completion or cancellation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChildExit {
-    Exited {
-        success: bool,
-        code: Option<i32>,
-    },
+    Exited { success: bool, code: Option<i32> },
     Unknown,
 }
 
@@ -696,7 +693,10 @@ for line in sys.stdin:
         let marker = ledger.with_file_name("calls.blocked");
         let entry_deadline = Instant::now() + DEADLINE;
         while fs::read_to_string(&marker).ok().as_deref() != Some("entered") {
-            assert!(Instant::now() < entry_deadline, "child did not enter blocking path");
+            assert!(
+                Instant::now() < entry_deadline,
+                "child did not enter blocking path"
+            );
             assert!(peer.child.try_wait().unwrap().is_none());
             std::thread::sleep(Duration::from_millis(5));
         }

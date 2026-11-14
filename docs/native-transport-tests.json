@@ -30,7 +30,7 @@
     "supported_protocol_and_schema_pin": "passed_local_identity_source_correspondence_unverified"
   },
   "evidence_class": "bounded_native_session_preparation_transport_and_durable_identity_candidate",
-  "historical_evidence_boundary": "Existing code_sha256 and passed results describe their recorded pre-shutdown revision, not current shutdown changes. See observed-child-shutdown-evidence.json; current Rust/native rerun not_run.",
+  "historical_evidence_boundary": "Existing code_sha256 and passed results describe their recorded pre-shutdown revision, not current shutdown changes. See observed-child-shutdown-evidence.json for new local scripted Rust results; real pinned native observations were not rerun.",
   "integration_update": {
     "python_evidence": "Optimized subprocesses with synthetic Cargo results reject successful tests, compile failures and unrelated failures; accept only behavioral-failure output. This tests checker logic, not Rust mutations.",
     "remaining": "Full Rust and actual mutation execution must be rerun on qualified runner for this candidate; historical native observations are not rerun or promoted by this update.",

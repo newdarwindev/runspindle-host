@@ -53,5 +53,7 @@ No actual pinned app-server, provider or user session runs in these tests.
 Required commands before readiness: `cargo fmt --all -- --check`,
 `cargo test --offline --locked`, `cargo clippy --offline --locked --all-targets -- -D warnings`,
 `python3 tools/check_native_mutations.py`, and the full mandatory validation entrypoint.
-Until those run on the qualified lane, Rust behavior and mutation detection remain
-not_run. Existing historical native metadata evidence does not cover this change.
+Local Strix source checks with Rust 1.94.1 passed 54 Rust tests, formatting,
+all-target Clippy and seven native/bridge behavioral mutations. Exact-image CI
+and the full mandatory inventory remain required before readiness. No real pinned
+app-server or provider was run. Historical native metadata does not cover this change.
