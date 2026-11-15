@@ -13,6 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native_bridge.rs").read_text()
     mutations = {
+        "native_bridge_factory_authority": (
+            "if !verifier.verify(binding, Action::TakeOwnership) {",
+            "if false && !verifier.verify(binding, Action::TakeOwnership) {",
+        ),
+        "native_bridge_stale_owner": (
+            "if current != Some(owner) {",
+            "if false && current != Some(owner) {",
+        ),
         "native_bridge_relaunch": (
             "if self.reserve().is_err() {\n            return LaunchReply::LostReply;\n        }",
             "let _ = self.reserve();",

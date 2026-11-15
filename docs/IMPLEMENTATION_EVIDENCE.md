@@ -43,3 +43,12 @@ evidence includes a real returned thread ID persisted under exact Binding in
 SQLite and read by a separate process. Scripted turn/item/restart behavior remains
 separate; task execution, task terminal propagation and bridge interrupts remain
 unsupported.
+
+
+The owner-fencing candidate for #9 extends the existing NativeBridge rather than
+adding an alternate adapter. See [durable native transport ownership](../specs/native-bridge.md#durable-native-transport-ownership).
+At implementation time the scaffold and all 65 Python tests passed in the cloud
+workspace. Rust formatting, Rust tests/clippy and behavioral mutation execution
+are not yet run on this revision because this workspace has no Rust toolchain.
+No dependency, lockfile, binary pin or operational activation has changed. The
+existing actual-native evidence is historical and does not qualify this change.

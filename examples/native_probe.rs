@@ -77,6 +77,7 @@ fn main() {
         &journal,
         LocalPin::new("probe-host", "probe-private-workspace").unwrap(),
         binding(),
+        &Grant,
         || {
             let mut io = StdioSession::spawn(Path::new(&args[1]), directory)?;
             io.initialize()?;

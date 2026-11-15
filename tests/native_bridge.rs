@@ -50,6 +50,13 @@ fn binding() -> Binding {
         lease_epoch: 1,
     }
 }
+// Explicit synthetic ownership authority for negative binding tests only.
+struct OwnershipGrant;
+impl Verifier for OwnershipGrant {
+    fn verify(&self, _: &Binding, action: Action) -> bool {
+        action == Action::TakeOwnership
+    }
+}
 struct Grant;
 impl Verifier for Grant {
     fn verify(&self, b: &Binding, _: Action) -> bool {
@@ -179,6 +186,7 @@ fn peer(dir: &Path, events: Events) -> NativeBridge<Scripted, impl Fn() -> u64> 
         dir.join("host.sqlite"),
         pin(),
         binding(),
+        &Grant,
         || Ok(Scripted::open(&dir.join("peer.sqlite"), events)),
         || 120,
     )
@@ -227,8 +235,28 @@ fn native_bridge_child() {
     let mut io = Scripted::open(&dir.join("peer.sqlite"), events.clone());
     io.crash_start = mode == "start_crash";
     io.crash_notice = mode == "notice_crash";
-    let mut bridge =
-        NativeBridge::open(dir.join("host.sqlite"), pin(), binding(), || Ok(io), || 120).unwrap();
+    let mut bridge = NativeBridge::open(
+        dir.join("host.sqlite"),
+        pin(),
+        binding(),
+        &Grant,
+        || {
+            if mode == "owner_factory" {
+                std::fs::write(dir.join("factory-held"), "ready").unwrap();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                while !dir.join("factory-release").exists() {
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }
+            Ok(io)
+        },
+        || 120,
+    )
+    .unwrap();
+    if mode == "owner_factory" {
+        return;
+    }
     let mut a = adapter(&dir.join("host.sqlite"), 32);
     match mode.as_str() {
         "ack_crash" => {
@@ -360,6 +388,7 @@ fn native_bridge_wrong_binding_and_rejected_ephemeral_read_never_relaunch() {
             t.0.join("host.sqlite"),
             pin(),
             changed,
+            &OwnershipGrant,
             || Ok(Scripted::open(&t.0.join("peer.sqlite"), Events::default())),
             || 120
         ),
@@ -367,8 +396,15 @@ fn native_bridge_wrong_binding_and_rejected_ephemeral_read_never_relaunch() {
     ));
     let mut io = Scripted::open(&t.0.join("peer.sqlite"), Events::default());
     io.reject_read = true;
-    let mut bridge =
-        NativeBridge::open(t.0.join("host.sqlite"), pin(), binding(), || Ok(io), || 120).unwrap();
+    let mut bridge = NativeBridge::open(
+        t.0.join("host.sqlite"),
+        pin(),
+        binding(),
+        &Grant,
+        || Ok(io),
+        || 120,
+    )
+    .unwrap();
     assert_eq!(
         a.reconcile(&binding(), 120, &mut bridge),
         Err(Error::Unknown)
@@ -522,6 +558,7 @@ fn native_bridge_configured_local_pins_precede_database_and_transport_factory() 
             t.0.join("host.sqlite"),
             local,
             binding(),
+            &Grant,
             || Ok(Scripted::open(&t.0.join("peer.sqlite"), Events::default())),
             || 120,
         );
@@ -557,6 +594,7 @@ fn native_bridge_every_reopened_binding_field_and_requested_operation_is_fenced(
             t.0.join("host.sqlite"),
             pin(),
             b.clone(),
+            &OwnershipGrant,
             || {
                 counter.fetch_add(1, Ordering::Relaxed);
                 Ok(Scripted::open(&t.0.join("peer.sqlite"), Events::default()))
@@ -576,4 +614,206 @@ fn native_bridge_every_reopened_binding_field_and_requested_operation_is_fenced(
     assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
     assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 0);
     assert_eq!(count(&t.0.join("peer.sqlite"), "interrupt"), 0);
+}
+
+#[test]
+fn native_bridge_takeover_requires_authority_before_database_or_factory() {
+    let t = Temp::new();
+    let calls = AtomicU64::new(0);
+    let result = NativeBridge::open(
+        t.0.join("host.sqlite"),
+        pin(),
+        binding(),
+        &Deny,
+        || {
+            calls.fetch_add(1, Ordering::Relaxed);
+            Ok(Scripted::open(&t.0.join("peer.sqlite"), Events::default()))
+        },
+        || 120,
+    );
+    assert!(matches!(result, Err(Error::Denied)));
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert!(!t.0.join("host.sqlite").exists());
+}
+
+#[test]
+fn native_bridge_stale_owner_cannot_launch_read_or_consume_after_takeover() {
+    let t = Temp::new();
+    let events = Events::default();
+    let mut stale = peer(&t.0, events.clone());
+    let mut current = peer(&t.0, events.clone());
+    assert_eq!(stale.launch(&binding()), LaunchReply::LostReply);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 0);
+    assert!(matches!(
+        current.launch(&binding()),
+        LaunchReply::Accepted(_)
+    ));
+    events.lock().unwrap().push_back(turn());
+    assert!(stale.discover(&binding()).is_empty());
+    assert_eq!(stale.poll(), Err(Error::Conflict));
+    assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 0);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "notice"), 0);
+    assert_eq!(current.discover(&binding()).len(), 1);
+    assert_eq!(current.poll(), Ok(true));
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 1);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "notice"), 1);
+}
+
+#[test]
+fn native_bridge_failed_factory_does_not_restore_old_owner() {
+    let t = Temp::new();
+    let mut stale = peer(&t.0, Events::default());
+    assert!(matches!(stale.launch(&binding()), LaunchReply::Accepted(_)));
+    let result = NativeBridge::<Scripted, _>::open(
+        t.0.join("host.sqlite"),
+        pin(),
+        binding(),
+        &Grant,
+        || Err(WireError::Io),
+        || 120,
+    );
+    assert!(matches!(result, Err(Error::Unknown)));
+    assert!(stale.discover(&binding()).is_empty());
+    assert_eq!(stale.poll(), Err(Error::Conflict));
+    assert_eq!(stale.launch(&binding()), LaunchReply::LostReply);
+    let mut current = peer(&t.0, Events::default());
+    assert_eq!(current.launch(&binding()), LaunchReply::LostReply);
+    assert_eq!(current.discover(&binding()).len(), 1);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 1);
+}
+
+// Independent SQLite writer probes prove there is no owner-check/native-call gap.
+// A pre-call generation comparison alone would let this competing writer through.
+fn assert_takeover_locked(path: &Path) {
+    let db = Connection::open(path).unwrap();
+    db.busy_timeout(std::time::Duration::ZERO).unwrap();
+    let error = db.execute_batch("BEGIN IMMEDIATE").unwrap_err();
+    assert_eq!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy)
+    );
+}
+struct LockedPeer {
+    host: PathBuf,
+    peer: Scripted,
+}
+impl NativeIo for LockedPeer {
+    fn start_empty_thread(&mut self) -> Result<String, WireError> {
+        assert_takeover_locked(&self.host);
+        self.peer.start_empty_thread()
+    }
+    fn read_thread(&mut self, thread: &str) -> Result<NativeIds, WireError> {
+        assert_takeover_locked(&self.host);
+        self.peer.read_thread(thread)
+    }
+    fn next_notice(&mut self, thread: &str) -> Option<Result<NativeNotice, WireError>> {
+        assert_takeover_locked(&self.host);
+        self.peer.next_notice(thread)
+    }
+}
+#[test]
+fn native_bridge_factory_and_actual_io_hold_atomic_owner_fence() {
+    let t = Temp::new();
+    let host = t.0.join("host.sqlite");
+    let effects = t.0.join("peer.sqlite");
+    let events = Events::default();
+    events.lock().unwrap().push_back(turn());
+    let mut bridge = NativeBridge::open(
+        &host,
+        pin(),
+        binding(),
+        &Grant,
+        || {
+            assert_takeover_locked(&host);
+            Ok(LockedPeer {
+                host: host.clone(),
+                peer: Scripted::open(&effects, events),
+            })
+        },
+        || 120,
+    )
+    .unwrap();
+    assert!(matches!(
+        bridge.launch(&binding()),
+        LaunchReply::Accepted(_)
+    ));
+    assert_eq!(bridge.discover(&binding()).len(), 1);
+    assert_eq!(bridge.poll(), Ok(true));
+    assert_eq!(count(&effects, "start"), 1);
+    assert_eq!(count(&effects, "read"), 1);
+    assert_eq!(count(&effects, "notice"), 1);
+}
+
+#[test]
+fn native_bridge_competing_process_takeover_blocks_old_owner_until_factory_returns() {
+    let t = Temp::new();
+    let mut stale = peer(&t.0, Events::default());
+    let mut owner = child(&t.0, "owner_factory");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !t.0.join("factory-held").exists() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let (ready, entered) = std::sync::mpsc::channel();
+    let old = std::thread::spawn(move || {
+        ready.send(()).unwrap();
+        (
+            stale.launch(&binding()),
+            stale.discover(&binding()),
+            stale.poll(),
+        )
+    });
+    entered
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert!(!old.is_finished());
+    std::fs::write(t.0.join("factory-release"), "release").unwrap();
+    let (launch, read, poll) = old.join().unwrap();
+    assert_eq!(launch, LaunchReply::LostReply);
+    assert!(read.is_empty());
+    assert_eq!(poll, Err(Error::Conflict));
+    assert!(owner.wait().unwrap().success());
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 0);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 0);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "notice"), 0);
+}
+
+#[test]
+fn native_bridge_revoked_factory_authority_retains_committed_takeover() {
+    struct RevokesBeforeFactory(AtomicU64);
+    impl Verifier for RevokesBeforeFactory {
+        fn verify(&self, _: &Binding, action: Action) -> bool {
+            assert_eq!(action, Action::TakeOwnership);
+            self.0.fetch_add(1, Ordering::SeqCst) < 2
+        }
+    }
+    let t = Temp::new();
+    let mut stale = peer(&t.0, Events::default());
+    let grant = RevokesBeforeFactory(AtomicU64::new(0));
+    let calls = AtomicU64::new(0);
+    let result = NativeBridge::open(
+        t.0.join("host.sqlite"),
+        pin(),
+        binding(),
+        &grant,
+        || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Scripted::open(&t.0.join("peer.sqlite"), Events::default()))
+        },
+        || 120,
+    );
+    assert!(matches!(result, Err(Error::Denied)));
+    assert_eq!(grant.0.load(Ordering::SeqCst), 3);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(stale.launch(&binding()), LaunchReply::LostReply);
+    assert_eq!(stale.poll(), Err(Error::Conflict));
+    let generation: u64 = Connection::open(t.0.join("host.sqlite"))
+        .unwrap()
+        .query_row("SELECT generation FROM host_native_owner", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(generation, 2);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 0);
 }

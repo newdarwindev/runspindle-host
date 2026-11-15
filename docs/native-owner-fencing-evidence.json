@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "evidence_class": "manual_bounded_synthetic_component_verification",
+  "tested_commit": "c1323a4e801d49b8441b82d53b64f6f8bda1a0a7",
+  "tested_tree": "4fcb49b412fa0eb97e9adcf0f8e31be98b5a93ff",
+  "source_verification": {
+    "tracked_blobs_verified": 155,
+    "tree_verified": true
+  },
+  "source_sha256": {
+    "Cargo.lock": "daf4f482906c3a53cfac842fb957908163cd8e92ffa219e7774c70da589230e5",
+    "src/native_bridge.rs": "618642803c9d6ff28afbe3967960db242dafa7c9e354de78363809171e63a384",
+    "tests/native_bridge.rs": "b40aafd557bc7b8e109cea225fc61c708a19d9b60f494cfb42d29d571bf5b5c4",
+    "tools/check_native_bridge_mutations.py": "d1c8b13c2342a8c7141119787642da8403b72fb5617ae8573e163a21f5dbb6c7"
+  },
+  "environment": {
+    "rust_version": "1.94.1",
+    "vendor_crates_verified": 38,
+    "offline": true,
+    "locked": true,
+    "cargo_build_jobs": 1,
+    "clean_bounded_environment": true,
+    "installation_scope": "existing task-local toolchain",
+    "full_c_toolchain_qualification": "unknown",
+    "rust_test_threads": 1,
+    "private_directories": [
+      "HOME",
+      "TMPDIR",
+      "CARGO_HOME",
+      "vendor",
+      "CARGO_TARGET_DIR"
+    ],
+    "explicit_tools": [
+      "RUSTC",
+      "RUSTDOC",
+      "GCC 16",
+      "ar"
+    ],
+    "path_policy": "pinned Rust, pinned Python, system /usr/bin and /bin",
+    "python_bytecode_disabled": true,
+    "python_user_site_disabled": true
+  },
+  "checks": [
+    {
+      "name": "rust_format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "rust_tests",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1"
+      ],
+      "status": "passed",
+      "tests_passed": 61,
+      "duration_seconds": 26.92,
+      "stdout_sha256": "fad1b7f59679a522457dd2b58434f0e806080f40bb87e775a20382755c9722cd",
+      "doctests": 0
+    },
+    {
+      "name": "rust_clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "status": "passed",
+      "duration_seconds": 5.3
+    },
+    {
+      "name": "native_bridge_mutations",
+      "command": [
+        "python3",
+        "tools/check_native_bridge_mutations.py"
+      ],
+      "status": "passed",
+      "mutations_detected_behaviorally": 5,
+      "duration_seconds": 52.19,
+      "stdout_sha256": "c94453e3b730798b92e9f418a1c473ee272f50c760f05dc004bdb667e9d5d94e",
+      "mutations": [
+        "native_bridge_factory_authority",
+        "native_bridge_stale_owner",
+        "native_bridge_relaunch",
+        "native_bridge_task_terminal_promotion",
+        "native_bridge_receive_fence_removed"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds; not an unrestricted direct Cargo execution."
+    }
+  ],
+  "unexpected_failures": {
+    "timeouts": 0,
+    "resource_failures": 0,
+    "precondition_failures": 0,
+    "compile_failures": 0
+  },
+  "historical_evidence": [
+    {
+      "source_commit": "fc1fdcfe831a6a57d439e4f5b84f56a5243fbd7f",
+      "other_mutations_detected_behaviorally": 9,
+      "boundary": "Separate earlier-source results; not rerun or attributed to tested_commit."
+    },
+    {
+      "source_commit": "b4317b6ea68f5fad9cced5d0906aac2baecea861",
+      "python_tests_passed": 65,
+      "scaffold": "passed",
+      "boundary": "Earlier local source check, before formatting-only change; not a final-head aggregate result."
+    }
+  ],
+  "not_qualified": [
+    "github_ci",
+    "runner_image",
+    "live_acceptance",
+    "actual_os_native_peer_conformance",
+    "native_probe",
+    "full_c_toolchain"
+  ],
+  "limitations": [
+    "Synthetic peers and local SQLite/process tests do not qualify actual native task execution.",
+    "Contention tests use bounded 100ms coordination and do not independently establish exact scheduler timing.",
+    "Remaining mutation suites were not rerun at tested_commit.",
+    "This supplemental evidence changes no original evidence or operational acceptance gates."
+  ],
+  "execution_bounds": {
+    "per_command_timeout_seconds": 90,
+    "kill_after_seconds": 5,
+    "cpu_seconds": 60,
+    "process_limit": 1280,
+    "file_size_limit_blocks": 262144,
+    "mutation_execution": "Reviewed allowlisted wrapper enforced test/offline/locked/jobs1, per-child bounds and a shared infrastructure-failure marker; outer script bounded to 90 seconds."
+  }
+}
