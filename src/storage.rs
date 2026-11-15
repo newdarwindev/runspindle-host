@@ -37,11 +37,22 @@ impl Storage for Memory {
 fn storage_error(_: rusqlite::Error) -> Error {
     Error::Storage
 }
+/// Durable entrypoints accept ordinary filesystem paths, not SQLite connection
+/// strings. Inspect raw OS bytes so ./ prefixes and non-UTF8 filenames survive.
+pub(crate) fn require_durable_path(path: &std::path::Path) -> Result<(), Error> {
+    let bytes = path.as_os_str().as_encoded_bytes();
+    if bytes.is_empty() || bytes == b":memory:" || bytes.starts_with(b"file:") {
+        return Err(Error::Unsupported);
+    }
+    Ok(())
+}
 pub struct Sqlite {
     connection: Connection,
 }
 impl Sqlite {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, Error> {
+        let path = path.as_ref();
+        require_durable_path(path)?;
         let connection = Connection::open(path).map_err(storage_error)?;
         connection
             .busy_timeout(std::time::Duration::from_secs(5))
@@ -96,5 +107,35 @@ impl Storage for Sqlite {
         if tx.execute("UPDATE host_state SET generation=?1,state=?2 WHERE id=1 AND version=1 AND generation=?3",params![next,bytes,generation]).map_err(storage_error)? != 1 { return Err(Error::Conflict); }
         tx.commit().map_err(storage_error)?;
         Ok(next)
+    }
+}
+
+#[cfg(test)]
+mod durable_path_tests {
+    use super::*;
+    #[test]
+    fn durable_paths_preserve_raw_ordinary_path_spelling() {
+        for path in [
+            "./:memory:",
+            "./file:ordinary",
+            "File:ordinary",
+            "FILE:ordinary",
+            "file",
+            "directory/:memory:",
+        ] {
+            assert_eq!(require_durable_path(std::path::Path::new(path)), Ok(()));
+        }
+        for path in [
+            "",
+            ":memory:",
+            "file:",
+            "file:ordinary",
+            "file::memory:?cache=shared",
+        ] {
+            assert_eq!(
+                require_durable_path(std::path::Path::new(path)),
+                Err(Error::Unsupported)
+            );
+        }
     }
 }
