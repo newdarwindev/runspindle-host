@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "evidence_class": "manual_bounded_synthetic_component_verification",
+  "tested_source_commit": "a65c07dd855058ef5f82e814b81c2efddd34360d",
+  "tested_source_tree": "7a36a92ee0bd8d91144160ef8b333e954ce227ce",
+  "source_verification": {
+    "tracked_blobs_verified": 156,
+    "tree_verified": true,
+    "boundary": "Exact source reconstructed independently; publication commit metadata may differ. This evidence file was added after the tested source."
+  },
+  "source_sha256": {
+    "Cargo.lock": "daf4f482906c3a53cfac842fb957908163cd8e92ffa219e7774c70da589230e5",
+    "src/native.rs": "b58a76eb9e2e9b908307ff88d6161b10e34ccf46b551e35c8f03fb9c157d862d",
+    "tools/check_native_mutations.py": "ad4c73ab0c86b48306b8845d8fa7c02678095e54d8c8f3b2b2962a38d977ba1f"
+  },
+  "toolchain": {
+    "rust": "1.94.1",
+    "cargo": "1.94.1",
+    "rustfmt": "1.8.0-stable",
+    "clippy": "0.1.94",
+    "python": "3.12.16",
+    "rust_archive_sha256": "294b3d81fa72e62581276290c60c81eb8b58498d333d422ca1dfc432877d0c40",
+    "vendor_crates_verified": 38,
+    "full_c_toolchain_qualification": "unknown",
+    "rust_archive_verification": "Verified once before the sequence, not before each stage.",
+    "per_stage_preflight_checks": [
+      "Seven installed binary hashes",
+      "38 crate archives and all vendor files",
+      "Source and Cargo.lock identity",
+      "CC/AR identities and execution-user checks"
+    ],
+    "preflight_evidence_boundary": "Execution command transcript substantiates the preflight checks; the four result receipts do not explicitly record their digests.",
+    "version_evidence_boundary": "Rust 1.94.1 is recorded in saved compiler target metadata. Cargo, rustfmt and Clippy version strings come from earlier prepared-toolchain probes, not fresh version probes during the final run."
+  },
+  "environment": {
+    "clean_environment": true,
+    "offline": true,
+    "locked": true,
+    "cargo_build_jobs": 1,
+    "rust_test_threads": 1,
+    "private_directories": [
+      "HOME",
+      "TMPDIR",
+      "CARGO_HOME",
+      "vendor",
+      "CARGO_TARGET_DIR"
+    ],
+    "explicit_tools": [
+      "RUSTC",
+      "RUSTDOC",
+      "GCC 16",
+      "ar"
+    ],
+    "python_bytecode_disabled": true,
+    "python_user_site_disabled": true
+  },
+  "execution_bounds": {
+    "per_command_timeout_seconds": 90,
+    "kill_after_seconds": 5,
+    "cpu_seconds": 60,
+    "process_limit": 1280,
+    "file_size_limit_zsh_blocks": 262144,
+    "mutation_execution": "Reviewed allowlisted Cargo wrapper enforced offline/locked/jobs1 and bounded child execution. A separate failure marker guarded infrastructure failures versus expected behavioral failures."
+  },
+  "checks": [
+    {
+      "name": "rust_format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.04945,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "rust_tests",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 28.01856,
+      "tests_passed": 68,
+      "test_breakdown": {
+        "library": 24,
+        "durable": 8,
+        "lifecycle": 18,
+        "native_bridge": 18,
+        "doctests": 0
+      },
+      "counting_note": "Nested fixture subprocess summaries are not additional tests.",
+      "stdout_sha256": "e390a11701cc09a55b87b64ab7a5ad2498da69b5fb160cbcc54b1e5220cd2759",
+      "stderr_sha256": "8f898ec4b29567c9260186f9e7eddcfd32ac9e120d299f374d158f1142ab8eec"
+    },
+    {
+      "name": "rust_clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 5.39855,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "99663eea3547bb480d52f70227be2ebacfb2a15ab4360ceab177f7af6b507ba7"
+    },
+    {
+      "name": "native_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 34.14869,
+      "mutations_detected_behaviorally": 6,
+      "mutations": [
+        "native_ambiguous_reply",
+        "native_scalar_interrupt_ack",
+        "native_unknown_cleanup",
+        "native_duplicate_json_members",
+        "native_thread_rebinding",
+        "native_unbounded_frame"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "00dfc3e45aa3fbd75b49178bb0fbdaac02b8e3d0e5e316d81fe8cabac3a2d01b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "cloud_checks_same_tested_source": {
+    "scaffold": "passed",
+    "python_tests_passed": 65,
+    "python_test_duration_seconds": 6.943,
+    "diff_whitespace": "passed",
+    "boundary": "Separate cloud checks, not runner-image or aggregate CI qualification."
+  },
+  "historical_evidence_preserved": [
+    "docs/native-transport-tests.json",
+    "docs/native-owner-fencing-evidence.json",
+    "docs/IMPLEMENTATION_EVIDENCE.md"
+  ],
+  "not_qualified": [
+    "github_ci",
+    "runner_image",
+    "live_acceptance",
+    "actual_os_native_peer_conformance",
+    "native_provider_execution",
+    "native_probe",
+    "full_c_toolchain"
+  ],
+  "limitations": [
+    "Subprocess peers are synthetic; actual native interruption and task completion are not qualified.",
+    "Other mutation suites were not rerun for this wire-validation source.",
+    "Issues 8 and 9 remain partial; source checks do not close broad acceptance gaps.",
+    "No existing evidence file or operational gate is replaced by this supplement."
+  ]
+}

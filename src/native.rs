@@ -148,7 +148,13 @@ pub fn notification_ids(value: &Value, expected_thread: &str) -> Result<NativeId
     if value.get("id").is_some() {
         return Err(WireError::Unexpected);
     }
+    if value.get("result").is_some() || value.get("error").is_some() {
+        return Err(WireError::Malformed);
+    }
     let p = &value["params"];
+    if !p.is_object() {
+        return Err(WireError::Malformed);
+    }
     let (thread, turn, item) = match value["method"].as_str() {
         Some("thread/started") => (id(&p["thread"]["id"])?, None, None),
         Some("turn/started" | "turn/completed") => {
@@ -200,6 +206,30 @@ pub enum NativeNotice {
     },
 }
 impl NativeNotice {
+    fn into_ids(self) -> NativeIds {
+        let (thread_id, turn_id, item_id) = match self {
+            Self::ThreadStarted { thread_id } => (thread_id, None, None),
+            Self::TurnStarted { thread_id, turn_id }
+            | Self::TurnCompleted {
+                thread_id, turn_id, ..
+            } => (thread_id, Some(turn_id), None),
+            Self::ItemStarted {
+                thread_id,
+                turn_id,
+                item_id,
+            }
+            | Self::ItemCompleted {
+                thread_id,
+                turn_id,
+                item_id,
+            } => (thread_id, Some(turn_id), Some(item_id)),
+        };
+        NativeIds {
+            thread_id,
+            turn_id,
+            item_id,
+        }
+    }
     pub fn thread_id(&self) -> &str {
         match self {
             Self::ThreadStarted { thread_id }
@@ -450,12 +480,26 @@ impl StdioSession {
                 if frame["id"] != request_id || frame.get("method").is_some() {
                     return Err(WireError::Unexpected);
                 }
-                if frame.get("error").is_some() {
+                // An ambiguous or malformed error must not become an authoritative
+                // rejection. No peer error content escapes this metadata boundary.
+                let result = frame.get("result");
+                let error = frame.get("error");
+                if result.is_some() == error.is_some() || frame.get("params").is_some() {
+                    return Err(WireError::Malformed);
+                }
+                if let Some(error) = error {
+                    if error["code"].as_i64().is_none() || !error["message"].is_string() {
+                        return Err(WireError::Malformed);
+                    }
                     return Err(WireError::Rejected);
                 }
-                return frame.get("result").cloned().ok_or(WireError::Malformed);
+                return result.cloned().ok_or(WireError::Malformed);
             }
-            if !frame["method"].is_string() || frame.get("params").is_none() {
+            if !frame["method"].is_string()
+                || !frame["params"].is_object()
+                || frame.get("result").is_some()
+                || frame.get("error").is_some()
+            {
                 return Err(WireError::Malformed);
             }
             if self.notifications.len() >= MAX_PENDING {
@@ -534,17 +578,20 @@ impl StdioSession {
         }
         id(&json!(thread))?;
         id(&json!(turn))?;
-        self.rpc("turn/interrupt", json!({"threadId":thread,"turnId":turn}))?;
+        let reply = self.rpc("turn/interrupt", json!({"threadId":thread,"turnId":turn}))?;
+        // The pinned TurnInterruptResponse schema is an object. Other JSON
+        // values are not acknowledgement, and never establish task completion.
+        if !reply.is_object() {
+            self.close();
+            return Err(WireError::Malformed);
+        }
         Ok(())
     }
     pub fn take_notification(&mut self, thread: &str) -> Option<Result<NativeIds, WireError>> {
-        if self.closed || self.reader_failed.load(Ordering::Acquire) {
-            self.close();
-            return Some(Err(WireError::Closed));
-        }
-        self.notifications
-            .pop_front()
-            .map(|value| notification_ids(&value, thread))
+        // Both public consumers use the same strict parser and poisoned-stream
+        // behavior; asking for IDs alone cannot bypass notification validation.
+        self.next_notice(thread)
+            .map(|result| result.map(NativeNotice::into_ids))
     }
     /// Drain only sanitized notifications; unsolicited replies poison the stream.
     pub fn next_notice(&mut self, thread: &str) -> Option<Result<NativeNotice, WireError>> {
@@ -951,5 +998,153 @@ for line in sys.stdin:
             peer.take_notification("native-123"),
             Some(Err(WireError::Closed))
         );
+    }
+    #[test]
+    fn native_ambiguous_and_malformed_replies_never_acknowledge_or_retry() {
+        for response in [
+            "{'id':r['id'],'result':{},'error':{'code':-1,'message':'synthetic'}}",
+            "{'id':r['id']}",
+            "{'id':r['id'],'error':None}",
+            "{'id':r['id'],'error':{'code':'-1','message':'synthetic'}}",
+            "{'id':r['id'],'error':{'code':-1,'message':7}}",
+            "{'id':r['id'],'result':{},'params':{}}",
+        ] {
+            let (mut peer, ledger) =
+                scripted(&format!("  print(json.dumps({response}),flush=True)"));
+            peer.initialize().unwrap();
+            assert_eq!(
+                peer.interrupt("thread-native", "turn-native"),
+                Err(WireError::Malformed)
+            );
+            assert_eq!(
+                peer.interrupt("thread-native", "turn-native"),
+                Err(WireError::Closed)
+            );
+            assert_eq!(
+                fs::read_to_string(ledger)
+                    .unwrap()
+                    .matches("turn/interrupt")
+                    .count(),
+                1
+            );
+        }
+    }
+    #[test]
+    fn native_interrupt_acknowledgement_requires_pinned_object_response() {
+        for response in ["None", "False", "[]", "7", "'synthetic'"] {
+            let (mut peer, ledger) = scripted(&format!(
+                "  print(json.dumps({{'id':r['id'],'result':{response}}}),flush=True)"
+            ));
+            peer.initialize().unwrap();
+            assert_eq!(
+                peer.interrupt("thread-native", "turn-native"),
+                Err(WireError::Malformed)
+            );
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+            let calls = fs::read_to_string(ledger).unwrap();
+            assert_eq!(calls.matches("turn/interrupt").count(), 1);
+            assert!(!calls.contains("thread/start"));
+        }
+    }
+    #[test]
+    fn native_valid_rejection_is_sanitized_and_poisoned() {
+        let (mut peer, ledger) = scripted(
+            "  print(json.dumps({'id':r['id'],'error':{'code':-32000,'message':'synthetic-secret-canary','data':{'private':'synthetic-only'}}}),flush=True)"
+        );
+        peer.initialize().unwrap();
+        let error = peer.interrupt("thread-native", "turn-native").unwrap_err();
+        assert_eq!(error, WireError::Rejected);
+        assert!(!format!("{error:?}").contains("synthetic-secret-canary"));
+        assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+        assert_eq!(
+            fs::read_to_string(ledger)
+                .unwrap()
+                .matches("turn/interrupt")
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn native_identity_only_consumer_cannot_bypass_poisoned_notice_validation() {
+        for notice in [
+            "{'method':'thread/started','params':{'thread':{'id':'foreign'}}}",
+            "{'method':'turn/started','params':{'threadId':'native-123','turn':{'id':'turn-native','status':'invalid'}}}",
+            "{'method':'unsupported','params':{}}",
+        ] {
+            let (mut peer, ledger) = scripted(&format!(
+                "  print(json.dumps({notice}),flush=True)\n  print(json.dumps({{'id':r['id'],'result':{{'thread':{{'id':'native-123'}}}}}}),flush=True)"
+            ));
+            peer.initialize().unwrap();
+            peer.start_empty_thread().unwrap();
+            assert!(matches!(peer.take_notification("native-123"), Some(Err(_))));
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+            assert_eq!(peer.next_notice("native-123"), Some(Err(WireError::Closed)));
+            assert_eq!(
+            fs::read_to_string(ledger)
+                .unwrap()
+                .matches("thread/start")
+                .count(),
+            1
+        );
+        }
+    }
+    #[test]
+    fn native_hybrid_notifications_cannot_be_queued_or_decoded() {
+        for field in ["result", "error"] {
+            let notice =
+                json!({"method":"thread/started","params":{"thread":{"id":"native-123"}},field:{}});
+            assert_eq!(
+                notification_ids(&notice, "native-123"),
+                Err(WireError::Malformed)
+            );
+            let (mut peer, ledger) = scripted(&format!(
+                "  print({:?},flush=True)\n  print(json.dumps({{'id':r['id'],'result':{{'thread':{{'id':'native-123'}}}}}}),flush=True)",
+                notice.to_string()
+            ));
+            peer.initialize().unwrap();
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Malformed));
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+            assert_eq!(
+                fs::read_to_string(ledger)
+                    .unwrap()
+                    .matches("thread/start")
+                    .count(),
+                1
+            );
+        }
+    }
+    #[test]
+    fn native_generic_result_null_is_present_not_a_missing_reply() {
+        let (mut peer, ledger) =
+            scripted("  print(json.dumps({'id':r['id'],'result':None}),flush=True)");
+        peer.initialize().unwrap();
+        assert_eq!(peer.rpc("fixture/nullable", json!({})), Ok(Value::Null));
+        assert!(!peer.closed);
+        assert_eq!(
+            fs::read_to_string(ledger)
+                .unwrap()
+                .matches("fixture/nullable")
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn native_identity_consumer_preserves_validated_thread_turn_and_item() {
+        let (mut peer, _) = scripted(
+            "  print(json.dumps({'method':'thread/started','params':{'thread':{'id':'native-123'}}}),flush=True)\n  print(json.dumps({'method':'turn/started','params':{'threadId':'native-123','turn':{'id':'turn-native','status':'inProgress'}}}),flush=True)\n  print(json.dumps({'method':'item/started','params':{'threadId':'native-123','turnId':'turn-native','item':{'id':'item-native'}}}),flush=True)\n  print(json.dumps({'id':r['id'],'result':{'thread':{'id':'native-123'}}}),flush=True)"
+        );
+        peer.initialize().unwrap();
+        peer.start_empty_thread().unwrap();
+        for (turn, item) in [
+            (None, None),
+            (Some("turn-native"), None),
+            (Some("turn-native"), Some("item-native")),
+        ] {
+            let ids = peer.take_notification("native-123").unwrap().unwrap();
+            assert_eq!(ids.thread_id, "native-123");
+            assert_eq!(ids.turn_id.as_deref(), turn);
+            assert_eq!(ids.item_id.as_deref(), item);
+        }
+        assert!(peer.take_notification("native-123").is_none());
     }
 }
