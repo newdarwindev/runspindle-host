@@ -31,7 +31,11 @@
     "mutation_2": [
       "durable-mutations"
     ],
-    "mutation_3": [],
-    "mutation_4": []
+    "mutation_3": [
+      "native-mutations"
+    ],
+    "mutation_4": [
+      "native-bridge-mutations"
+    ]
   }
 }
