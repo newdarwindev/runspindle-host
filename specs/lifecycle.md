@@ -69,3 +69,8 @@ transport/sanitization remain blocked. Issues #1 and #2 remain open.
 The additional [durable library mapping](durable-lifecycle.md) now adds bounded SQLite storage and fresh-process
 scripted-peer tests. Earlier process-local evidence remains separate; actual native
 protocol, production durability and live acceptance remain unqualified.
+
+The [native identity bridge](native-bridge.md) is an explicitly partial mapping:
+its Accepted/Acknowledged and terminal=None observations mean session preparation
+and session observation only. They do not establish a running task; observed turn
+metadata cannot promote task terminal state or authorize native interrupts.
