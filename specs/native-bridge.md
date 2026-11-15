@@ -153,3 +153,61 @@ factory-lock wait, full-open third-check denial with retained owner generation,
 and a concurrent child process holding factory ownership while the old process
 attempts launch. Independent effect counts must remain zero. Removing the final
 factory authority check is a separate required behavioral mutation failure.
+
+## Explicit authorized text-turn source candidate
+
+A separate native-turn.v1 request can submit one bounded text input to the already
+bound thread. It is not an Admission request or a grant inherited from session
+preparation. The injected exact-request verifier defaults to denial and is
+rechecked inside the existing ownership transaction after lock acquisition,
+immediately before turn/start. Input resolvers are trusted bounded local callbacks,
+not an installed input store: only the content address and byte length are retained.
+The bridge reads at most 2,049 bytes, checks the exact nonempty UTF-8 bytes against
+the reference and SHA-256, and never writes raw input to its SQLite journal.
+
+The closed profile requires an explicit restricted-syntax model identifier and
+maps only text input, approvalPolicy=never and readOnly/networkAccess=false.
+These are requested protocol settings, not proof of OS or tool confinement.
+The pinned upstream schema says these model/approval/sandbox overrides also apply
+to subsequent turns. Inherited plugins/tools are not disabled or qualified by this
+profile. The returned ID is an acknowledged native turn identity, not proof that
+a new turn rather than an existing active turn was created or that work completed.
+
+A durable request reservation commits before the external effect. Lost replies,
+process crashes, failed saves and post-reservation denial preserve uncertainty;
+repeated or reopened requests never repeat turn/start. An exact acknowledged
+request returns its persisted identity without rereading input or invoking the
+peer. Changed request data conflicts. The journal refuses submission with a prior
+observed turn, terminal, pending receipt or receive fence; this cannot prove the
+remote peer has no unobserved active turn. A successful response persists the exact
+turn ID alongside the full authorized request. Task-terminal promotion and
+cancellation remain unsupported in this slice; unsolicited notices do not grant
+task authority.
+
+The raw request decoder is canonical-only, with sorted object keys and compact
+UTF-8 JSON, no duplicate or additional members at any depth. Version, seven-field
+Binding, thread ID, input reference and profile are all explicit. Input length is
+1..2048 bytes; SHA-256 is exactly 64 lowercase hexadecimal characters. The input
+reference contains no URL, file path or credentials. Request envelopes and actual
+encoded native requests each have independent 4096-byte bounds; JSON escaping can
+make an otherwise valid input exceed the native bound, yielding no send and an
+uncertain reserved operation. No arbitrary upstream override is passed through.
+
+Old journal rows without task_turn remain readable. Pre-feature binaries reject
+rows containing task_turn via their existing deny_unknown_fields behavior;
+deployments must stop old writers before using this source candidate. No schema
+migration, history upgrade, input-store availability, live/provider execution or
+OS capability qualification is claimed. Synthetic tests use real SQLite, a
+fresh-process crash and independent effect counts; exact-source Rust execution
+and independent review remain required.
+
+Public injected NativeIo implementations receive a non-cloneable TurnPermit by
+value for task effects. Its fields/constructor are private outside the crate and
+it is minted only after reservation and final exact authority verification; direct
+external StdioSession trait calls cannot manufacture a task dispatch capability.
+This is a safe-Rust API boundary, not containment of malicious trusted adapters or
+unsafe code. Input access also rechecks exact authority after state/owner reads and
+immediately before resolver opening, so a SQLite wait cannot preserve an expired
+input grant. A regression observes an actual SQLite busy callback during a blocked
+read, revokes authority before releasing the lock, and independently counts zero
+resolver opens. A compile-fail public API test rejects external permit construction.

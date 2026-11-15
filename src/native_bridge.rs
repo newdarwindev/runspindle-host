@@ -19,10 +19,22 @@ const MAX_BYTES: usize = 65536;
 /// No port may discover an operation by guessing a native ID or reissuing start.
 pub trait NativeIo {
     fn start_empty_thread(&mut self) -> Result<String, WireError>;
+    fn start_text_turn(
+        &mut self,
+        _: crate::native_turn::TurnPermit<'_>,
+    ) -> Result<String, WireError> {
+        Err(WireError::Unsupported)
+    }
     fn read_thread(&mut self, thread: &str) -> Result<NativeIds, WireError>;
     fn next_notice(&mut self, thread: &str) -> Option<Result<NativeNotice, WireError>>;
 }
 impl NativeIo for StdioSession {
+    fn start_text_turn(
+        &mut self,
+        permit: crate::native_turn::TurnPermit<'_>,
+    ) -> Result<String, WireError> {
+        self.start_text_turn(permit.thread_id(), permit.text(), permit.model())
+    }
     fn start_empty_thread(&mut self) -> Result<String, WireError> {
         self.start_empty_thread()
     }
@@ -38,6 +50,8 @@ impl NativeIo for StdioSession {
 #[serde(deny_unknown_fields)]
 struct State {
     binding: Binding,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task_turn: Option<crate::native_turn::Reservation>,
     // The row itself reserves launch. None is uncertain, not proven absent.
     thread: Option<String>,
     turn: Option<String>,
@@ -87,6 +101,17 @@ fn load_state(db: &Connection, binding: &Binding) -> Result<Option<(u64, State)>
         }
         if state.pending.as_ref().is_some_and(|p| p.terminal.is_some()) {
             return Err(Error::Unsupported);
+        }
+        if state.task_turn.as_ref().is_some_and(|task| {
+            !task.request.valid()
+                || task.request.binding != state.binding
+                || state.thread.as_deref() != Some(&task.request.thread_id)
+                || task
+                    .turn_id
+                    .as_ref()
+                    .is_some_and(|id| !valid_id(id) || state.turn.as_ref() != Some(id))
+        }) {
+            return Err(Error::Storage);
         }
         if state.items.len() > MAX_ITEMS {
             return Err(Error::Capacity);
@@ -151,7 +176,7 @@ impl LocalPin {
     }
 }
 /// One exact operation/host/workspace/lease binding per bridge. Verifier authority
-/// remains in Adapter; this bridge never broadens it or submits a provider turn.
+/// remains in Adapter; task turns require a separate exact-request authority contract.
 pub struct NativeBridge<I, C> {
     db: Connection,
     owner: u64,
@@ -271,6 +296,7 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
     fn reserve(&mut self) -> Result<(), Error> {
         let state = State {
             binding: self.binding.clone(),
+            task_turn: None,
             thread: None,
             turn: None,
             items: BTreeMap::new(),
@@ -318,6 +344,84 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
             observed_at_ms: now,
             terminal: None,
         })
+    }
+    /// One separately authorized task turn on the already bound session.
+    /// A committed reservation is never retried, even after denial, crash or lost reply.
+    pub fn submit_turn<V: crate::native_turn::Verifier, R: crate::native_turn::InputResolver>(
+        &mut self,
+        request: &crate::native_turn::Request,
+        verifier: &V,
+        resolver: &R,
+    ) -> Result<crate::native_turn::Outcome, Error> {
+        use crate::native_turn::{Outcome, Reservation};
+        if !request.valid() {
+            return Err(Error::Malformed);
+        }
+        if request.binding != self.binding {
+            return Err(Error::WrongBinding);
+        }
+        if !verifier.verify_turn(request) {
+            return Err(Error::Denied);
+        }
+        let (generation, mut state) = self.load()?.ok_or(Error::Unknown)?;
+        if state.thread.as_deref() != Some(&request.thread_id) {
+            return Err(Error::WrongBinding);
+        }
+        if let Some(saved) = &state.task_turn {
+            if &saved.request != request {
+                return Err(Error::Conflict);
+            }
+            return Ok(saved.turn_id.clone().map_or(Outcome::Unknown, |turn_id| {
+                Outcome::Acknowledged { turn_id }
+            }));
+        }
+        if state.turn.is_some()
+            || state.terminal.is_some()
+            || state.receiving
+            || state.pending.is_some()
+        {
+            return Err(Error::Conflict);
+        }
+        // Loading state/ownership can wait on SQLite. A grant observed before
+        // that wait cannot authorize opening private input afterward.
+        if !verifier.verify_turn(request) {
+            return Err(Error::Denied);
+        } // input-time authority
+        let text = crate::native_turn::resolve(resolver, &request.input)?;
+        state.task_turn = Some(Reservation {
+            request: request.clone(),
+            turn_id: None,
+        });
+        self.save(generation, &state)?;
+        // Owner and exact task authority are checked after the writer lock wait,
+        // immediately before the external effect. Rollback cannot undo that effect.
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(sql)?;
+        check_owner(&tx, &self.binding, self.owner)?;
+        if !verifier.verify_turn(request) {
+            return Err(Error::Denied);
+        } // dispatch-time authority
+        let result = self
+            .io
+            .start_text_turn(crate::native_turn::TurnPermit::new(request, &text));
+        tx.commit().map_err(sql)?;
+        let Ok(turn_id) = result else {
+            return Ok(Outcome::Unknown);
+        };
+        if !valid_id(&turn_id) {
+            return Ok(Outcome::Unknown);
+        }
+        let (generation, mut state) = self.load()?.ok_or(Error::Unknown)?;
+        let saved = state.task_turn.as_mut().ok_or(Error::Unknown)?;
+        if &saved.request != request || saved.turn_id.is_some() {
+            return Err(Error::Conflict);
+        }
+        saved.turn_id = Some(turn_id.clone());
+        state.turn = Some(turn_id.clone());
+        self.save(generation, &state)?;
+        Ok(Outcome::Acknowledged { turn_id })
     }
     /// Durable sanitized identity readback, separate from a claim of current native liveness.
     pub fn identities(&self) -> Result<Option<NativeIds>, Error> {
@@ -626,6 +730,124 @@ mod owner_tests {
             .query_row("SELECT generation FROM host_native_owner", [], |r| r.get(0))
             .unwrap();
         assert_eq!(generation, 2); // Committed replacement ownership is retained.
+        drop(blocker);
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod turn_input_authority_tests {
+    use super::*;
+    use crate::native_turn::{InputRef, InputResolver, Profile, Request};
+    use std::sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    };
+    use std::time::{Duration, Instant};
+    static BUSY: AtomicBool = AtomicBool::new(false);
+    struct Io;
+    impl NativeIo for Io {
+        fn start_empty_thread(&mut self) -> Result<String, WireError> {
+            Ok("thread".into())
+        }
+        fn read_thread(&mut self, _: &str) -> Result<NativeIds, WireError> {
+            Err(WireError::Unsupported)
+        }
+        fn next_notice(&mut self, _: &str) -> Option<Result<NativeNotice, WireError>> {
+            None
+        }
+    }
+    struct Owner;
+    impl Verifier for Owner {
+        fn verify(&self, _: &Binding, a: Action) -> bool {
+            a == Action::TakeOwnership
+        }
+    }
+    struct Grant(Arc<AtomicBool>);
+    impl crate::native_turn::Verifier for Grant {
+        fn verify_turn(&self, _: &Request) -> bool {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+    struct Input(Arc<AtomicU64>);
+    impl InputResolver for Input {
+        fn open(&self, _: &InputRef) -> std::io::Result<Box<dyn std::io::Read>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(std::io::Cursor::new(b"x".to_vec())))
+        }
+    }
+    #[test]
+    fn native_turn_input_revocation_during_real_read_lock_wait_opens_nothing() {
+        let path = std::env::temp_dir().join(format!(
+            "native-turn-read-lock-{}.sqlite",
+            std::process::id()
+        ));
+        let binding = Binding {
+            task_id: "task".into(),
+            revision: 1,
+            operation_id: "op".into(),
+            policy_revision: "policy".into(),
+            host_id: "host".into(),
+            workspace_id: "workspace".into(),
+            lease_epoch: 1,
+        };
+        let mut bridge = NativeBridge::open(
+            &path,
+            LocalPin::new("host", "workspace").unwrap(),
+            binding.clone(),
+            &Owner,
+            || Ok(Io),
+            || 120,
+        )
+        .unwrap();
+        assert!(matches!(bridge.launch(&binding), LaunchReply::Accepted(_)));
+        // Rollback-journal exclusive locking blocks the actual read, unlike WAL.
+        bridge
+            .db
+            .execute_batch("PRAGMA journal_mode=DELETE;")
+            .unwrap();
+        bridge
+            .db
+            .busy_handler(Some(|attempt| {
+                BUSY.store(true, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(1));
+                attempt < 2000
+            }))
+            .unwrap();
+        let blocker = Connection::open(&path).unwrap();
+        blocker.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+        BUSY.store(false, Ordering::SeqCst);
+        let authorized = Arc::new(AtomicBool::new(true));
+        let opens = Arc::new(AtomicU64::new(0));
+        let grant = Grant(authorized.clone());
+        let input = Input(opens.clone());
+        let worker = std::thread::spawn(move || {
+            let request = Request {
+                version: crate::native_turn::VERSION.into(),
+                binding,
+                thread_id: "thread".into(),
+                input: InputRef {
+                    sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+                        .into(),
+                    byte_length: 1,
+                },
+                profile: Profile {
+                    kind: "read_only_text_v1".into(),
+                    model: "synthetic".into(),
+                },
+            };
+            bridge.submit_turn(&request, &grant, &input)
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !BUSY.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let observed_wait = BUSY.load(Ordering::SeqCst);
+        authorized.store(false, Ordering::SeqCst);
+        blocker.execute_batch("COMMIT;").unwrap();
+        assert_eq!(worker.join().unwrap(), Err(Error::Denied));
+        assert!(observed_wait, "actual SQLite busy callback not observed");
+        assert_eq!(opens.load(Ordering::SeqCst), 0);
         drop(blocker);
         std::fs::remove_file(path).unwrap();
     }
