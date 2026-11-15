@@ -53,6 +53,8 @@ pub enum Action {
     Launch,
     Reconcile,
     Cancel,
+    /// Claim or replace the exact-binding native transport owner.
+    TakeOwnership,
 }
 pub trait Verifier {
     fn verify(&self, binding: &Binding, action: Action) -> bool;

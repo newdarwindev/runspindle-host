@@ -8,7 +8,8 @@ It submits no prompt and has no turn/start port. It does not qualify task execut
 ## Authority and identity
 
 Construction compares the complete incoming Binding with separately trusted local
-host/workspace configuration (`LocalPin`) before touching SQLite or invoking the
+host/workspace configuration (`LocalPin`) and requires an explicit
+`Verifier::verify(binding, Action::TakeOwnership)` grant before touching SQLite or invoking the
 lazy transport factory. Reopened operation rows must match every Binding field;
 changed task/revision/policy/host/workspace/lease cannot reuse the row. A different
 operation may have its own bounded row but cannot discover another operation's
@@ -98,3 +99,57 @@ outbound denial. Actual task/turn/item execution, authorized cancellation, nativ
 restart recovery, native ordering/freshness, provider use, transport authentication,
 additional platforms, live acceptance and installed-binary/source correspondence
 remain blocked. Scripted native turn metadata is not actual native turn acceptance.
+
+
+## Durable native transport ownership
+
+`open` requires explicit `TakeOwnership` authority even for an initial owner. The
+verifier is checked before database/factory access and again after acquiring the
+each SQLite writer lock, including immediately before factory invocation after
+the separately committed ownership claim. Revocation while the second lock waits
+returns Denied without invoking the factory or restoring the previous owner.
+It is a trusted local verifier, not peer-provided authority.
+A caller cannot supply an owner generation or use takeover to alter any Binding
+field. The new `host_native_owner` table allocates monotonically increasing owner
+generations for each exact operation binding, separately from immutable lease
+identity and journal event generations. Owner rows are bounded to 1,024.
+
+A new authorized open replaces the previous owner. Ownership is committed before
+the lazy factory: a failed/crashed factory does not restore stale ownership.
+Factory creation, thread/start, thread/read and notification consumption execute
+only while an IMMEDIATE transaction verifies the owner and excludes competing
+ownership replacement. State writes also check ownership in their transaction.
+Existing live bridge objects fail closed after takeover; they cannot read, consume,
+launch or save state. A stale object's cleanup may still terminate its own child.
+It cannot terminate another owner's child or authorize a turn interrupt.
+
+The native call is intentionally inside this **separate native-journal fence**,
+not the generic Adapter storage transaction. Each callback must be bounded and
+must not reenter or wait for another writer on this database. The pinned stdio
+transport already supplies bounded RPC and shutdown deadlines. Arbitrary injected
+ports are trusted code and are not made bounded by this API. SQLite contention
+has a five-second busy timeout. This is a local single-database serialization
+contract, not a distributed lease or cross-host authority service.
+
+Launch and receive reservations are committed before the fenced external call.
+A process crash, commit failure or takeover after I/O cannot roll back an external
+effect or erase that uncertainty. The new owner reconciles a previously saved ID
+and never repeats start; a missing ID/receive fence remains Unknown. A takeover
+alone does not qualify recovery of lost replies or notifications. Task execution,
+capture/text/submission, actual OS capability qualification and live acceptance
+remain blocked. Deployments must stop old pre-fence processes before upgrading;
+old binaries do not understand the ownership table.
+
+Tests include independently recorded peer effects, rejected takeover before any
+factory/database access, stale-owner calls after takeover, failed factory recovery,
+and competing SQLite-writer probes inside factory/start/read/notice callbacks.
+The existing fresh-process crash/recovery suite now exercises owner replacement.
+A deliberate mutation removing owner comparison must fail the stale-owner test.
+These are synthetic peer/component tests with real SQLite, not new native-peer
+qualification.
+
+The owner-fencing follow-up also tests revocation during an actual contended
+factory-lock wait, full-open third-check denial with retained owner generation,
+and a concurrent child process holding factory ownership while the old process
+attempts launch. Independent effect counts must remain zero. Removing the final
+factory authority check is a separate required behavioral mutation failure.

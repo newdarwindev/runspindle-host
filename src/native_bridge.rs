@@ -1,7 +1,7 @@
 //! Native identity journal attached to the existing durable lifecycle Peer contract.
 //! Counters/times are trusted local host observations, never fabricated native fields.
 use crate::lifecycle::{
-    Adapter, Binding, CancelReply, Error, Event, EventKind, Execution, LaunchReply, Observation,
+    Action, Adapter, Binding, CancelReply, Error, Event, EventKind, Execution, LaunchReply, Observation,
     Peer, Terminal, Verifier, VERSION,
 };
 use crate::native::{NativeIds, NativeNotice, StdioSession, WireError};
@@ -95,6 +95,36 @@ fn load_state(db: &Connection, binding: &Binding) -> Result<Option<(u64, State)>
     })
     .transpose()
 }
+// A generation is allocated by SQLite, not by the caller or peer. It fences
+// transport ownership only; it is distinct from the immutable authority lease.
+fn check_owner(db: &Connection, binding: &Binding, owner: u64) -> Result<(), Error> {
+    let current: Option<u64> = db.query_row(
+        "SELECT generation FROM host_native_owner WHERE operation=?1",
+        [&binding.operation_id], |r| r.get(0),
+    ).optional().map_err(sql)?;
+    if current != Some(owner) { return Err(Error::Conflict); }
+    Ok(())
+}
+
+// The first committed ownership claim does not preserve authority while this
+// second writer lock waits. Revalidate immediately before the factory effect.
+fn make_owned_io<I>(
+    db: &mut Connection,
+    binding: &Binding,
+    owner: u64,
+    verifier: &impl Verifier,
+    make_io: impl FnOnce() -> Result<I, WireError>,
+) -> Result<I, Error> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
+    check_owner(&tx, binding, owner)?;
+    if !verifier.verify(binding, Action::TakeOwnership) {
+        return Err(Error::Denied);
+    }
+    let io = make_io().map_err(|_| Error::Unknown)?;
+    tx.commit().map_err(sql)?;
+    Ok(io)
+}
+
 /// Trusted local configuration, supplied independently of incoming request/Presence.
 /// This is a pin comparison, not a credential or authority resolver.
 pub struct LocalPin {
@@ -116,6 +146,7 @@ impl LocalPin {
 /// remains in Adapter; this bridge never broadens it or submits a provider turn.
 pub struct NativeBridge<I, C> {
     db: Connection,
+    owner: u64,
     binding: Binding,
     io: I,
     clock: C,
@@ -126,6 +157,7 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         path: impl AsRef<Path>,
         local_pin: LocalPin,
         binding: Binding,
+        verifier: &impl Verifier,
         make_io: F,
         clock: C,
     ) -> Result<Self, Error> {
@@ -135,15 +167,45 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         if binding.host_id != local_pin.host_id || binding.workspace_id != local_pin.workspace_id {
             return Err(Error::WrongBinding);
         }
-        let db = Connection::open(path).map_err(sql)?;
+        // Opening another transport replaces the current owner, so it requires
+        // explicit authority, including when there is no native session yet.
+        if !verifier.verify(&binding, Action::TakeOwnership) {
+            return Err(Error::Denied);
+        }
+        let mut db = Connection::open(path).map_err(sql)?;
         db.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(sql)?;
         db.execute_batch("PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;PRAGMA max_page_count=8192;
-            CREATE TABLE IF NOT EXISTS host_native_state(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),version INTEGER NOT NULL CHECK(version=1),generation INTEGER NOT NULL,state BLOB NOT NULL CHECK(length(state)<=65536));").map_err(sql)?;
+            CREATE TABLE IF NOT EXISTS host_native_state(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),version INTEGER NOT NULL CHECK(version=1),generation INTEGER NOT NULL,state BLOB NOT NULL CHECK(length(state)<=65536));
+            CREATE TABLE IF NOT EXISTS host_native_owner(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),generation INTEGER NOT NULL CHECK(generation>0),binding BLOB NOT NULL CHECK(length(binding)<=4096));").map_err(sql)?;
         load_state(&db, &binding)?;
-        let io = make_io().map_err(|_| Error::Unknown)?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
+        // Recheck after acquiring the lock; waiting cannot preserve expired authority.
+        if !verifier.verify(&binding, Action::TakeOwnership) {
+            return Err(Error::Denied);
+        }
+        let previous: Option<(u64, Vec<u8>)> = tx.query_row(
+            "SELECT generation,binding FROM host_native_owner WHERE operation=?1",
+            [&binding.operation_id], |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional().map_err(sql)?;
+        let owner = if let Some((generation, bytes)) = previous {
+            let saved: Binding = serde_json::from_slice(&bytes).map_err(|_| Error::Storage)?;
+            if saved != binding { return Err(Error::Conflict); }
+            generation.checked_add(1).filter(|n| *n <= i64::MAX as u64).ok_or(Error::Capacity)?
+        } else {
+            let count: u64 = tx.query_row("SELECT count(*) FROM host_native_owner", [], |r| r.get(0)).map_err(sql)?;
+            if count >= MAX_ROWS { return Err(Error::Capacity); }
+            1
+        };
+        let bytes = serde_json::to_vec(&binding).map_err(|_| Error::Storage)?;
+        tx.execute("INSERT INTO host_native_owner VALUES(?1,?2,?3) ON CONFLICT(operation) DO UPDATE SET generation=excluded.generation", params![binding.operation_id, owner, bytes]).map_err(sql)?;
+        tx.commit().map_err(sql)?;
+        // Persist ownership before factory I/O: a crash or failed factory never
+        // restores authority to the old owner. Takeover is not launch permission.
+        let io = make_owned_io(&mut db, &binding, owner, verifier, make_io)?;
         let bridge = Self {
             db,
+            owner,
             binding,
             io,
             clock,
@@ -153,7 +215,18 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         Ok(bridge)
     }
     fn load(&self) -> Result<Option<(u64, State)>, Error> {
+        check_owner(&self.db, &self.binding, self.owner)?;
         load_state(&self.db, &self.binding)
+    }
+    /// Serialize the owner check and native call against ownership replacement.
+    /// NativeIo must be bounded and must not reenter this SQLite database. The
+    /// pinned StdioSession uses bounded I/O; injected ports must honor that contract.
+    fn fenced_io<R>(&mut self, call: impl FnOnce(&mut I) -> R) -> Result<R, Error> {
+        let tx = self.db.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
+        check_owner(&tx, &self.binding, self.owner)?;
+        let result = call(&mut self.io);
+        tx.commit().map_err(sql)?;
+        Ok(result)
     }
     fn save(&mut self, generation: u64, state: &State) -> Result<(), Error> {
         let bytes = encode(state)?;
@@ -165,6 +238,7 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(sql)?;
+        check_owner(&tx, &self.binding, self.owner)?;
         if tx.execute("UPDATE host_native_state SET generation=?1,state=?2 WHERE operation=?3 AND version=1 AND generation=?4",params![next,bytes,self.binding.operation_id,generation]).map_err(sql)? != 1 { return Err(Error::Conflict); }
         tx.commit().map_err(sql)
     }
@@ -185,6 +259,7 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(sql)?;
+        check_owner(&tx, &self.binding, self.owner)?;
         let count: u64 = tx
             .query_row("SELECT count(*) FROM host_native_state", [], |r| r.get(0))
             .map_err(sql)?;
@@ -334,7 +409,7 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
             generation = generation.checked_add(1).ok_or(Error::Capacity)?;
         }
         if self.retained_notice.is_none() {
-            let Some(notice) = self.io.next_notice(&thread) else {
+            let Some(notice) = self.fenced_io(|io| io.next_notice(&thread))? else {
                 state.receiving = false;
                 self.save(generation, &state)?;
                 return Ok(false);
@@ -416,7 +491,7 @@ impl<I: NativeIo, C: Fn() -> u64> Peer for NativeBridge<I, C> {
         if self.reserve().is_err() {
             return LaunchReply::LostReply;
         }
-        let Ok(thread) = self.io.start_empty_thread() else {
+        let Ok(Ok(thread)) = self.fenced_io(|io| io.start_empty_thread()) else {
             return LaunchReply::LostReply;
         };
         if !valid_id(&thread) {
@@ -448,7 +523,7 @@ impl<I: NativeIo, C: Fn() -> u64> Peer for NativeBridge<I, C> {
         if state.pending.is_some() || state.receiving {
             return vec![];
         }
-        let Ok(ids) = self.io.read_thread(thread) else {
+        let Ok(Ok(ids)) = self.fenced_io(|io| io.read_thread(thread)) else {
             return vec![];
         };
         if ids.thread_id != thread {
@@ -466,5 +541,57 @@ impl<I: NativeIo, C: Fn() -> u64> Peer for NativeBridge<I, C> {
         // Observed turn metadata is not authorization to interrupt that turn.
         // Binding-only Peer has no separately authorized exact task-turn binding.
         CancelReply::LostReply
+    }
+}
+
+
+#[cfg(test)]
+mod owner_tests {
+    use super::*;
+    use std::sync::{atomic::{AtomicBool, AtomicU64, Ordering}, Arc, mpsc};
+    use std::time::Duration;
+
+    struct Revocable(Arc<AtomicBool>);
+    impl Verifier for Revocable {
+        fn verify(&self, _: &Binding, action: Action) -> bool {
+            action == Action::TakeOwnership && self.0.load(Ordering::SeqCst)
+        }
+    }
+    #[test]
+    fn native_owner_revocation_during_factory_lock_wait_has_zero_effects() {
+        let path = std::env::temp_dir().join(format!("native-owner-wait-{}.sqlite", std::process::id()));
+        let binding = Binding {
+            task_id: "task".into(), revision: 1, operation_id: "operation".into(),
+            policy_revision: "policy".into(), host_id: "host".into(),
+            workspace_id: "workspace".into(), lease_epoch: 1,
+        };
+        let blocker = Connection::open(&path).unwrap();
+        blocker.execute_batch("CREATE TABLE host_native_owner(operation TEXT PRIMARY KEY,generation INTEGER);INSERT INTO host_native_owner VALUES('operation',2);BEGIN IMMEDIATE;").unwrap();
+        let granted = Arc::new(AtomicBool::new(true));
+        let calls = Arc::new(AtomicU64::new(0));
+        let (ready, entered) = mpsc::channel();
+        let worker_path = path.clone();
+        let worker_grant = granted.clone();
+        let worker_calls = calls.clone();
+        let worker = std::thread::spawn(move || {
+            let mut db = Connection::open(worker_path).unwrap();
+            db.busy_timeout(Duration::from_secs(2)).unwrap();
+            ready.send(()).unwrap();
+            make_owned_io(&mut db, &binding, 2, &Revocable(worker_grant), || {
+                worker_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        entered.recv_timeout(Duration::from_secs(2)).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!worker.is_finished());
+        granted.store(false, Ordering::SeqCst);
+        blocker.execute_batch("COMMIT").unwrap();
+        assert_eq!(worker.join().unwrap(), Err(Error::Denied));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let generation: u64 = blocker.query_row("SELECT generation FROM host_native_owner", [], |r| r.get(0)).unwrap();
+        assert_eq!(generation, 2); // Committed replacement ownership is retained.
+        drop(blocker);
+        std::fs::remove_file(path).unwrap();
     }
 }
