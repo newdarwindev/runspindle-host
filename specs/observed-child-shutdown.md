@@ -57,3 +57,41 @@ Local Strix source checks with Rust 1.94.1 passed 54 Rust tests, formatting,
 all-target Clippy and seven native/bridge behavioral mutations. Exact-image CI
 and the full mandatory inventory remain required before readiness. No real pinned
 app-server or provider was run. Historical native metadata does not cover this change.
+
+
+## Fallible worker setup candidate
+
+This follow-up to #9 explicitly depends on the reviewed, unmerged wire-validation
+PR #15. It changes only owned-child setup, not the pending merge or CI gate.
+
+Previously, fallible pipe extraction and infallible worker spawning happened
+before StdioSession owned the already-started child. Missing pipes or OS worker
+creation failure could unwind without an owning shutdown guard. Setup now creates
+the owning session first, validates both pipes before starting any worker, and
+uses fallible `thread::Builder::spawn`. Every successfully started worker is
+immediately retained by that owner.
+
+A setup error calls the same bounded `close_observed` path before returning.
+Observed child exit plus joined workers yields the original I/O error and permits
+normal Drop cleanup. Unconfirmed shutdown, including a worker panic detected on
+join, returns explicit `WireError::ShutdownUnknown` and retains the directory.
+Repeated close/drop uses the cached receipt; no retry, PID lookup, PID-based kill
+or unrelated process termination is added. Only the original owned Child handle
+is terminated. Process abort or unrecoverable allocation failure is not claimed
+recoverable.
+
+The binary/platform preparation stage remains separate: failures before any
+child exists may remove its newly created directory. Once a child exists, only
+the owning session's observed shutdown policy can remove that directory; the
+outer spawn wrapper no longer deletes it unconditionally after setup errors.
+Native pins, credentials, environment, RPCs and operational activation are unchanged.
+
+Tests use actual disposable Python children and injected worker-creation failures
+before the first worker and after the writer has started. They verify the actual
+owned OS child handle reports exit, started workers finish/join, failed setup
+cannot emit native protocol calls and successful cleanup removes the directory.
+Missing stdin/stdout starts no worker. An injected actual worker panic is joined
+and leaves a truthful unknown-cleanup error and retained directory; the fixture
+then explicitly cleans only after independent exit/join checks. Removing the
+setup shutdown call must fail these tests behaviorally. Native app-server startup,
+real OS resource exhaustion and actual kill failures remain untested.
