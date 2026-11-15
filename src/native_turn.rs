@@ -126,6 +126,8 @@ pub(crate) fn resolve(
 pub(crate) struct Reservation {
     pub request: Request,
     pub turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancellation: Option<CancelReservation>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -161,5 +163,96 @@ impl<'a> TurnPermit<'a> {
     }
     pub fn model(&self) -> &str {
         self.model
+    }
+}
+
+pub const CANCEL_VERSION: &str = "runspindle.native-turn-cancel.v1";
+/// Distinct from submission/session authority, retaining the full immutable target.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CancelRequest {
+    pub version: String,
+    pub task: Request,
+    pub turn_id: String,
+}
+impl CancelRequest {
+    pub fn valid(&self) -> bool {
+        self.version == CANCEL_VERSION && self.task.valid() && identifier(&self.turn_id)
+    }
+    pub fn encode(&self) -> Result<Vec<u8>, crate::lifecycle::Error> {
+        use crate::lifecycle::Error;
+        if !self.valid() {
+            return Err(Error::Malformed);
+        }
+        let value = serde_json::to_value(self).map_err(|_| Error::Malformed)?;
+        let bytes = serde_json::to_vec(&value).map_err(|_| Error::Malformed)?;
+        if bytes.len() > MAX_ENVELOPE_BYTES {
+            return Err(Error::Capacity);
+        }
+        Ok(bytes)
+    }
+    pub fn decode(bytes: &[u8]) -> Result<Self, crate::lifecycle::Error> {
+        use crate::lifecycle::Error;
+        if bytes.len() > MAX_ENVELOPE_BYTES {
+            return Err(Error::Capacity);
+        }
+        let value = crate::native::unique_json(bytes).map_err(|_| Error::Malformed)?;
+        let request: Self = serde_json::from_value(value).map_err(|_| Error::Malformed)?;
+        if request.encode()?.as_slice() != bytes {
+            return Err(Error::Malformed);
+        }
+        Ok(request)
+    }
+}
+/// Exact cancellation authority, never implied by submit/admission permission.
+pub trait CancelVerifier {
+    fn verify_cancel(&self, request: &CancelRequest) -> bool;
+}
+impl CancelVerifier for Deny {
+    fn verify_cancel(&self, _: &CancelRequest) -> bool {
+        false
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CancelReservation {
+    pub request: CancelRequest,
+    pub acknowledged: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CancelOutcome {
+    Acknowledged,
+    Unknown,
+    /// Existing local native metadata only, not task completion authority.
+    ObservedTerminal {
+        terminal: crate::lifecycle::Terminal,
+    },
+}
+/// Consumed capability minted only at the durable cancellation dispatch boundary.
+/// The raw transport interrupt is not a public bypass:
+/// ```compile_fail
+/// use runspindle_host::native::StdioSession;
+/// fn bypass(peer: &mut StdioSession) { let _ = peer.interrupt("thread", "turn"); }
+/// ```
+/// ```compile_fail
+/// use runspindle_host::native_turn::CancelPermit;
+/// let permit = CancelPermit { thread_id: "thread", turn_id: "turn" };
+/// ```
+pub struct CancelPermit<'a> {
+    thread_id: &'a str,
+    turn_id: &'a str,
+}
+impl<'a> CancelPermit<'a> {
+    pub(crate) fn new(request: &'a CancelRequest) -> Self {
+        Self {
+            thread_id: &request.task.thread_id,
+            turn_id: &request.turn_id,
+        }
+    }
+    pub fn thread_id(&self) -> &str {
+        self.thread_id
+    }
+    pub fn turn_id(&self) -> &str {
+        self.turn_id
     }
 }

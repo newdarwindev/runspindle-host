@@ -18,6 +18,9 @@ const MAX_BYTES: usize = 65536;
 /// Injected ports are scripted unless backed by the separately pinned StdioSession.
 /// No port may discover an operation by guessing a native ID or reissuing start.
 pub trait NativeIo {
+    fn interrupt_turn(&mut self, _: crate::native_turn::CancelPermit<'_>) -> Result<(), WireError> {
+        Err(WireError::Unsupported)
+    }
     fn start_empty_thread(&mut self) -> Result<String, WireError>;
     fn start_text_turn(
         &mut self,
@@ -29,6 +32,12 @@ pub trait NativeIo {
     fn next_notice(&mut self, thread: &str) -> Option<Result<NativeNotice, WireError>>;
 }
 impl NativeIo for StdioSession {
+    fn interrupt_turn(
+        &mut self,
+        permit: crate::native_turn::CancelPermit<'_>,
+    ) -> Result<(), WireError> {
+        self.interrupt(permit.thread_id(), permit.turn_id())
+    }
     fn start_text_turn(
         &mut self,
         permit: crate::native_turn::TurnPermit<'_>,
@@ -62,6 +71,20 @@ struct State {
     sequence: u64,
     observed_at_ms: u64,
     pending: Option<Observation>,
+}
+fn validate_cancel_target(
+    state: &State,
+    request: &crate::native_turn::CancelRequest,
+) -> Result<(), Error> {
+    let task = state.task_turn.as_ref().ok_or(Error::Unknown)?;
+    if task.request != request.task || state.thread.as_deref() != Some(&request.task.thread_id) {
+        return Err(Error::WrongBinding);
+    }
+    let turn = task.turn_id.as_ref().ok_or(Error::Unknown)?;
+    if turn != &request.turn_id || state.turn.as_ref() != Some(turn) {
+        return Err(Error::WrongBinding);
+    }
+    Ok(())
 }
 fn sql(_: rusqlite::Error) -> Error {
     Error::Storage
@@ -106,6 +129,11 @@ fn load_state(db: &Connection, binding: &Binding) -> Result<Option<(u64, State)>
             !task.request.valid()
                 || task.request.binding != state.binding
                 || state.thread.as_deref() != Some(&task.request.thread_id)
+                || task.cancellation.as_ref().is_some_and(|cancel| {
+                    !cancel.request.valid()
+                        || cancel.request.task != task.request
+                        || task.turn_id.as_ref() != Some(&cancel.request.turn_id)
+                })
                 || task
                     .turn_id
                     .as_ref()
@@ -391,6 +419,7 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         state.task_turn = Some(Reservation {
             request: request.clone(),
             turn_id: None,
+            cancellation: None,
         });
         self.save(generation, &state)?;
         // Owner and exact task authority are checked after the writer lock wait,
@@ -422,6 +451,90 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         state.turn = Some(turn_id.clone());
         self.save(generation, &state)?;
         Ok(Outcome::Acknowledged { turn_id })
+    }
+    /// Reserve and dispatch at most one separately authorized exact-turn interrupt.
+    /// An acknowledgement never promotes terminal state or permits retry.
+    pub fn cancel_turn<V: crate::native_turn::CancelVerifier>(
+        &mut self,
+        request: &crate::native_turn::CancelRequest,
+        verifier: &V,
+    ) -> Result<crate::native_turn::CancelOutcome, Error> {
+        use crate::native_turn::{CancelOutcome, CancelPermit, CancelReservation};
+        if !request.valid() {
+            return Err(Error::Malformed);
+        }
+        if request.task.binding != self.binding {
+            return Err(Error::WrongBinding);
+        }
+        if !verifier.verify_cancel(request) {
+            return Err(Error::Denied);
+        }
+        let (generation, mut state) = self.load()?.ok_or(Error::Unknown)?;
+        validate_cancel_target(&state, request)?;
+        if state.receiving {
+            return Ok(CancelOutcome::Unknown);
+        }
+        if let Some(terminal) = state.terminal {
+            return Ok(CancelOutcome::ObservedTerminal { terminal });
+        }
+        let task = state.task_turn.as_mut().ok_or(Error::Unknown)?;
+        if let Some(saved) = &task.cancellation {
+            if &saved.request != request {
+                return Err(Error::Conflict);
+            }
+            return Ok(if saved.acknowledged {
+                CancelOutcome::Acknowledged
+            } else {
+                CancelOutcome::Unknown
+            });
+        }
+        task.cancellation = Some(CancelReservation {
+            request: request.clone(),
+            acknowledged: false,
+        });
+        self.save(generation, &state)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(sql)?;
+        check_owner(&tx, &self.binding, self.owner)?;
+        let (_, current) = load_state(&tx, &self.binding)?.ok_or(Error::Unknown)?;
+        validate_cancel_target(&current, request)?;
+        if !verifier.verify_cancel(request) {
+            return Err(Error::Denied);
+        } // cancel dispatch authority
+        if current.receiving {
+            return Ok(CancelOutcome::Unknown);
+        }
+        if let Some(terminal) = current.terminal {
+            return Ok(CancelOutcome::ObservedTerminal { terminal });
+        }
+        let saved = current
+            .task_turn
+            .as_ref()
+            .and_then(|t| t.cancellation.as_ref())
+            .ok_or(Error::Unknown)?;
+        if &saved.request != request || saved.acknowledged {
+            return Err(Error::Conflict);
+        }
+        let result = self.io.interrupt_turn(CancelPermit::new(request));
+        tx.commit().map_err(sql)?;
+        if result.is_err() {
+            return Ok(CancelOutcome::Unknown);
+        }
+        let (generation, mut state) = self.load()?.ok_or(Error::Unknown)?;
+        validate_cancel_target(&state, request)?;
+        let saved = state
+            .task_turn
+            .as_mut()
+            .and_then(|t| t.cancellation.as_mut())
+            .ok_or(Error::Unknown)?;
+        if &saved.request != request || saved.acknowledged {
+            return Err(Error::Conflict);
+        }
+        saved.acknowledged = true;
+        self.save(generation, &state)?;
+        Ok(CancelOutcome::Acknowledged)
     }
     /// Durable sanitized identity readback, separate from a claim of current native liveness.
     pub fn identities(&self) -> Result<Option<NativeIds>, Error> {
@@ -745,8 +858,23 @@ mod turn_input_authority_tests {
     };
     use std::time::{Duration, Instant};
     static BUSY: AtomicBool = AtomicBool::new(false);
+    static CANCEL_BUSY: AtomicBool = AtomicBool::new(false);
+    static CANCEL_EFFECTS: AtomicU64 = AtomicU64::new(0);
     struct Io;
     impl NativeIo for Io {
+        fn start_text_turn(
+            &mut self,
+            _: crate::native_turn::TurnPermit<'_>,
+        ) -> Result<String, WireError> {
+            Ok("turn".into())
+        }
+        fn interrupt_turn(
+            &mut self,
+            _: crate::native_turn::CancelPermit<'_>,
+        ) -> Result<(), WireError> {
+            CANCEL_EFFECTS.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
         fn start_empty_thread(&mut self) -> Result<String, WireError> {
             Ok("thread".into())
         }
@@ -848,6 +976,88 @@ mod turn_input_authority_tests {
         assert_eq!(worker.join().unwrap(), Err(Error::Denied));
         assert!(observed_wait, "actual SQLite busy callback not observed");
         assert_eq!(opens.load(Ordering::SeqCst), 0);
+        drop(blocker);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn native_cancel_revocation_during_actual_writer_wait_has_zero_effects() {
+        struct CancelGrant(Arc<AtomicBool>);
+        impl crate::native_turn::CancelVerifier for CancelGrant {
+            fn verify_cancel(&self, _: &crate::native_turn::CancelRequest) -> bool {
+                self.0.load(Ordering::SeqCst)
+            }
+        }
+        let path =
+            std::env::temp_dir().join(format!("native-cancel-wait-{}.sqlite", std::process::id()));
+        let binding = Binding {
+            task_id: "task".into(),
+            revision: 1,
+            operation_id: "op".into(),
+            policy_revision: "policy".into(),
+            host_id: "host".into(),
+            workspace_id: "workspace".into(),
+            lease_epoch: 1,
+        };
+        let mut bridge = NativeBridge::open(
+            &path,
+            LocalPin::new("host", "workspace").unwrap(),
+            binding.clone(),
+            &Owner,
+            || Ok(Io),
+            || 120,
+        )
+        .unwrap();
+        assert!(matches!(bridge.launch(&binding), LaunchReply::Accepted(_)));
+        let request = Request {
+            version: crate::native_turn::VERSION.into(),
+            binding,
+            thread_id: "thread".into(),
+            input: InputRef {
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881".into(),
+                byte_length: 1,
+            },
+            profile: Profile {
+                kind: "read_only_text_v1".into(),
+                model: "synthetic".into(),
+            },
+        };
+        let grant = Grant(Arc::new(AtomicBool::new(true)));
+        bridge
+            .submit_turn(&request, &grant, &Input(Arc::new(AtomicU64::new(0))))
+            .unwrap();
+        bridge
+            .db
+            .busy_handler(Some(|attempt| {
+                CANCEL_BUSY.store(true, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(1));
+                attempt < 2000
+            }))
+            .unwrap();
+        let blocker = Connection::open(&path).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        CANCEL_BUSY.store(false, Ordering::SeqCst);
+        CANCEL_EFFECTS.store(0, Ordering::SeqCst);
+        let allowed = Arc::new(AtomicBool::new(true));
+        let cancel_grant = CancelGrant(allowed.clone());
+        let worker = std::thread::spawn(move || {
+            let request = crate::native_turn::CancelRequest {
+                version: crate::native_turn::CANCEL_VERSION.into(),
+                task: request,
+                turn_id: "turn".into(),
+            };
+            bridge.cancel_turn(&request, &cancel_grant)
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !CANCEL_BUSY.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let waited = CANCEL_BUSY.load(Ordering::SeqCst);
+        allowed.store(false, Ordering::SeqCst);
+        blocker.execute_batch("COMMIT;").unwrap();
+        assert_eq!(worker.join().unwrap(), Err(Error::Denied));
+        assert!(waited, "actual writer contention was not observed");
+        assert_eq!(CANCEL_EFFECTS.load(Ordering::SeqCst), 0);
         drop(blocker);
         std::fs::remove_file(path).unwrap();
     }

@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "evidence_class": "manual_bounded_synthetic_component_verification",
+  "tested_source_commit": "2560c1c0f3e96559467b86ddd11d86c02eb3f09c",
+  "tested_source_tree": "d6305b4faf0abed20614d10650e6d76559cae96e",
+  "source_verification": {
+    "tree_verified": true,
+    "boundary": "Exact tested source/tree verified in the prepared lane. This supplemental evidence file was added afterward; evidence-head tests are not claimed.",
+    "tracked_blobs_verified": 165
+  },
+  "source_sha256": {
+    "Cargo.lock": "daf4f482906c3a53cfac842fb957908163cd8e92ffa219e7774c70da589230e5",
+    "src/native.rs": "a40716ce5e6fa1e3b2f22c1ae29d535b1a78120fbd0a2a1c7a15f6a5a259999a",
+    "tools/check_native_mutations.py": "e214fc706a307da37911e20e982967eb4cbdf25442ac8bae583bb5f7622ea48f",
+    "src/native_bridge.rs": "506ed09868eb03959b24cb887a9855cef6e23991dfd60ba5d2d9e09709c0d018",
+    "src/native_turn.rs": "44e282968c27258c41e01163e2bfffec1e82573674ec974b2314224be123341d",
+    "tests/native_turn.rs": "be84959ae4127f80610c98751a94c0db330d80c482fbe1864c5264a431c397cd",
+    "tools/check_native_turn_mutations.py": "0e273d8028cc70e7c07fd6a613b8fff4a04e94ceb0e8d6baa9753e4d32cff2a0",
+    "tests/native_cancel.rs": "861fbf7db2a289e0cb01c7789ed4627bf1d07feefee7200729d835cf35fd0aa0",
+    "tools/check_native_cancel_mutations.py": "9cd02f6b6e03735b97d70d262845199a48123c29f494b2c3d2b51c12fb3a8b54"
+  },
+  "toolchain": {
+    "rust": "1.94.1",
+    "cargo": "1.94.1",
+    "rustfmt": "1.8.0-stable",
+    "clippy": "0.1.94",
+    "python": "3.12.16",
+    "rust_archive_sha256": "294b3d81fa72e62581276290c60c81eb8b58498d333d422ca1dfc432877d0c40",
+    "vendor_crates_verified": 38,
+    "full_c_toolchain_qualification": "unknown",
+    "rust_archive_verification": "Verified once before the sequence, not before each stage.",
+    "per_stage_preflight_checks": [
+      "Seven installed binary hashes",
+      "38 crate archives and all vendor files",
+      "Source and Cargo.lock identity",
+      "CC/AR identities and execution-user checks"
+    ],
+    "preflight_evidence_boundary": "Final stage receipts contain categorical preflight assertions, not embedded digests. This sanitized supplement does not reproduce private receipts.",
+    "version_evidence_boundary": "Tool version strings come from earlier prepared-toolchain probes, not fresh version probes during the final run."
+  },
+  "environment": {
+    "clean_environment": true,
+    "offline": true,
+    "locked": true,
+    "cargo_build_jobs": 1,
+    "rust_test_threads": 1,
+    "private_directories": [
+      "HOME",
+      "TMPDIR",
+      "CARGO_HOME",
+      "vendor",
+      "CARGO_TARGET_DIR"
+    ],
+    "explicit_tools": [
+      "RUSTC",
+      "RUSTDOC",
+      "GCC 16",
+      "ar"
+    ],
+    "python_bytecode_disabled": true,
+    "python_user_site_disabled": true
+  },
+  "execution_bounds": {
+    "per_command_timeout_seconds": 90,
+    "kill_after_seconds": 5,
+    "cpu_seconds": 60,
+    "process_limit": 1280,
+    "file_size_limit_zsh_blocks": 262144,
+    "mutation_execution": "Reviewed allowlisted Cargo wrapper enforced offline/locked/jobs1 and bounded child execution. A separate failure marker guarded infrastructure failures versus expected behavioral failures."
+  },
+  "checks": [
+    {
+      "name": "rust_format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.059796278,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "rust_tests",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 32.609969395,
+      "tests_passed": 90,
+      "test_breakdown": {
+        "library": 33,
+        "durable": 8,
+        "lifecycle": 18,
+        "native_bridge": 18,
+        "native_cancel": 7,
+        "native_turn": 6,
+        "compile_fail_doctests": 3
+      },
+      "counting_note": "90 runtime tests plus three compile-fail documentation tests; nested fixture subprocess summaries are not additional tests.",
+      "stdout_sha256": "6781cd1355242f55d7cbda75560e865becad475ab38fcc9a8ec5bcfd7ff803c9",
+      "stderr_sha256": "d19a2b717564438121c8aa87c670840b479b5bae686dc8ba440296e5cde3718d"
+    },
+    {
+      "name": "rust_clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 5.836092713,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "68319c4d575b313a8694ed94f5478414e609eb564decd8f235c0aeaad1811beb"
+    },
+    {
+      "name": "native_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 49.917464629,
+      "mutations_detected_behaviorally": 8,
+      "mutations": [
+        "native_observed_poison",
+        "native_setup_observed_cleanup",
+        "native_ambiguous_reply",
+        "native_scalar_interrupt_ack",
+        "native_unknown_cleanup",
+        "native_duplicate_json_members",
+        "native_thread_rebinding",
+        "native_unbounded_frame"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "3efe3e84ddd25b66c64c04bfa7199501fba2bba0eb0775ef71093e8f4fe35487",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "native_turn_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_turn_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 45.553354863,
+      "mutations_detected_behaviorally": 4,
+      "mutations": [
+        "native_turn_input_authority",
+        "native_turn_dispatch_authority",
+        "native_turn_reservation",
+        "native_turn_no_retry"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "ca36c48a64e29fa9ca5741b4ecaac719b3ea3e98f26624c3567e1d03c751b8d8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "native_cancel_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_cancel_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 48.886118028,
+      "mutations_detected_behaviorally": 4,
+      "mutations": [
+        "native_cancel_dispatch_authority",
+        "native_cancel_reservation",
+        "native_cancel_no_retry",
+        "native_cancel_ack_not_terminal"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "bd9644f0680fe64a3a8820836f9b19396794e15f89988d71f8c12a857d092f26",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "historical_evidence_preserved": [
+    "docs/native-transport-tests.json",
+    "docs/native-owner-fencing-evidence.json",
+    "docs/IMPLEMENTATION_EVIDENCE.md",
+    "docs/native-wire-validation-evidence.json",
+    "docs/native-startup-cleanup-evidence.json",
+    "docs/native-observed-poison-evidence.json",
+    "docs/native-authorized-turn-evidence.json"
+  ],
+  "not_qualified": [
+    "github_ci",
+    "runner_image",
+    "live_acceptance",
+    "actual_os_native_peer_conformance",
+    "native_provider_execution",
+    "native_probe",
+    "full_c_toolchain"
+  ],
+  "limitations": [
+    "Synthetic cancellation authority and peers only; no production grant provider, input store or workflow activation is installed.",
+    "Only an already persisted authorized task request and acknowledged exact turn ID can be targeted; Admission/submission authority never grants cancellation.",
+    "Interrupt acknowledgement is not terminal completion. ObservedTerminal reports existing local native metadata, not task completion/acceptance authority or native freshness.",
+    "The code cannot exclude an unobserved remote completion race. Generic Peer.cancel and generic task-terminal promotion remain unsupported.",
+    "Public raw interrupt access is removed; safe-Rust dispatch requires the consumed capability. This does not contain malicious trusted adapters or unsafe code.",
+    "No actual native/provider process is invoked by this evidence; existing wire tests use synthetic Python children.",
+    "Other mutation suites were not rerun for this source.",
+    "Earlier source failure/not-run receipts and all historical evidence remain intact.",
+    "Issues 8 and 9 remain partial; no CI, live, OS or production acceptance gate is replaced."
+  ],
+  "dependency": {
+    "pull_request": 18,
+    "base_commit": "c139301f8c8a6a1cdaac9592eee293f979e36bd9",
+    "status_at_preparation": "Stacked on unmerged PR 18; no generic task-terminal promotion or operational activation."
+  },
+  "cloud_source_checks": {
+    "source_commit": "5778c0dc00f81fb57cd1d9fbc83905c96d03bbb8",
+    "scaffold": "passed",
+    "python_tests_passed": 65,
+    "python_test_duration_seconds": 6.929,
+    "boundary": "Pre-format source; not relabelled as final-source or CI qualification."
+  },
+  "formatted_cloud_source_checks": {
+    "source_commit": "2560c1c0f3e96559467b86ddd11d86c02eb3f09c",
+    "scaffold": "passed",
+    "python_tests_passed": 65,
+    "python_test_duration_seconds": 5.959,
+    "boundary": "Separate cloud source checks after exact formatting and mutation-anchor updates, before evidence-only commit."
+  },
+  "cross_language_parity": {
+    "status": "not_claimed_by_this_receipt",
+    "boundary": "Composition/native-turn parity is tracked separately; these cancellation checks do not establish cross-language cancellation interoperability."
+  },
+  "earlier_incomplete_run": {
+    "source_commit": "5778c0dc00f81fb57cd1d9fbc83905c96d03bbb8",
+    "rust_format": "failed_formatting_only",
+    "runtime_tests_passed": 90,
+    "compile_fail_doctests_passed": 3,
+    "test_duration_seconds": 33.136,
+    "precondition_failure": "Fresh execution-user thread count exceeded the existing 1200 precondition before Clippy.",
+    "clippy": "not_run",
+    "mutation_tools": "not_run",
+    "boundary": "The run stopped without raising limits. These earlier failure/not-run outcomes remain separate from final-source results."
+  }
+}

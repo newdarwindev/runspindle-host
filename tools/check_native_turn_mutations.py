@@ -22,7 +22,7 @@ def main() -> None:
             "if false && !verifier.verify_turn(request) {\n            return Err(Error::Denied);\n        } // dispatch-time authority",
         ),
         "native_turn_reservation": (
-            "state.task_turn = Some(Reservation {\n            request: request.clone(),\n            turn_id: None,\n        });",
+            "state.task_turn = Some(Reservation {\n            request: request.clone(),\n            turn_id: None,\n            cancellation: None,\n        });",
             "state.task_turn = None;",
         ),
         "native_turn_no_retry": (
