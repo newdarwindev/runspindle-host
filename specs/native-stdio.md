@@ -96,3 +96,25 @@ versus missing generic results and exact valid thread/turn/item IDs. Deliberate
 mutations remove ambiguity and interrupt-shape checks. Native peer execution,
 actual cancellation, OS capability qualification and broad issue acceptance remain
 unqualified; historical native evidence is not rerun by these changes.
+
+## Observed reader failure before reply acceptance
+
+This follow-up depends on PR #16 and retains the existing fail-closed stream
+contract. A reader failure (including malformed/oversized frames, overflow or EOF)
+may occur after a valid response has been queued. RPC consumption now checks the
+reader's poison flag after receiving a frame and before interpreting it as a
+response or notification. A success queued before an already observed failure
+cannot become a fresh accepted identity or interrupt acknowledgment. The call
+closes with uncertainty and never retries an effect. Even a normal EOF ends this
+persistent session; a buffered reply is not an exception to observed closure.
+
+This is an observed-state check, not an atomic continuous-failure guarantee.
+A failure that occurs after the acceptance check can still follow an accepted
+reply. No native freshness, lost-reply recovery or terminal authority is added.
+
+A test-only completion relay holds the RPC consumer until the real reader has
+observed a synthetic child's malformed frame, oversized frame, queue overflow or
+EOF after a valid reply. The actual child ledger independently records one
+thread/start and no retry. A healthy reply remains accepted. A deliberate mutation
+removes the consumption check. These source tests require exact-source Rust
+verification; no native/provider or CI qualification is claimed.
