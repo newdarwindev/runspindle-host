@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
+        "native_unknown_cleanup": (
+            "if cleanup_permitted(receipt) {",
+            "if true {",
+        ),
         "native_duplicate_json_members": (
             "if values.contains_key(&key) {",
             "if false && values.contains_key(&key) {",

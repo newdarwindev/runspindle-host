@@ -1,0 +1,52 @@
+{
+  "evidence_class": "local_scripted_component_source_validation",
+  "base_revision": "92061be0d0bde164287fb4ce10ee9f21eb723730",
+  "passed": [
+    "Python scaffold structure",
+    "optimized Python mutation-checker rejection of false evidence",
+    "52 Python tests normally and under optimized Python",
+    "pinned whole-tree static quality: zero new diagnostics; historical baseline unchanged"
+  ],
+  "authored": [
+    "four owned-child OS observation Rust tests",
+    "unknown-cleanup guard mutation"
+  ],
+  "not_run": [
+    "actual pinned native peer",
+    "live/provider acceptance",
+    "exact-image CI for this source",
+    "full mandatory validation inventory for this source"
+  ],
+  "blocked": [
+    "qualified exact-image checks remain required before readiness"
+  ],
+  "sha256": {
+    "src/native.rs": "51ba714fcfb71fdae68db8615baa914303c927c7f03eae2d21c00b83b7a21fb0",
+    "tools/check_native_mutations.py": "be1639d9a6f1bc9ffe9f32d97806549223558a1a1e48b5c4a07117ca680d67b9",
+    "specs/observed-child-shutdown.md": "cfb6cec529d6369835993949dde92ec17148fc100e9bed1ca93185813be2ad35"
+  },
+  "local_source_validation": {
+    "source_commit": "d0418eddfacc0b8bd558d428a5fbbd3fa9a0dc2c",
+    "toolchain": "rustc/cargo 1.94.1 x86_64-unknown-linux-gnu",
+    "dependencies": "existing offline cache copied to isolated scratch; locked; no acquisition",
+    "rust_tests": {
+      "lib": 16,
+      "durable": 8,
+      "lifecycle": 18,
+      "native_bridge": 12,
+      "total": 54,
+      "failed": 0,
+      "ignored": 0
+    },
+    "checks": [
+      "cargo fmt --all -- --check",
+      "cargo test --offline --locked",
+      "cargo clippy --offline --locked --all-targets -- -D warnings",
+      "python3 tools/check_native_mutations.py",
+      "python3 tools/check_native_bridge_mutations.py"
+    ],
+    "native_mutations_detected": 4,
+    "bridge_mutations_detected": 3,
+    "effects": "owned scripted subprocesses and scratch files only; no actual pinned app-server/provider; not exact-image CI"
+  }
+}

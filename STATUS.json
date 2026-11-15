@@ -34,5 +34,11 @@
     "source_commit": "e8cd5779968fede213443db13a591c992cd0e183",
     "status": "locally_tested"
   },
-  "stage": "lifecycle_candidate"
+  "stage": "lifecycle_candidate",
+  "owned_child_shutdown": {
+    "status": "source_candidate_uncompiled",
+    "specification": "specs/observed-child-shutdown.md",
+    "rust_tests": "not_run",
+    "native_task_completion": "unsupported"
+  }
 }
