@@ -648,7 +648,7 @@ impl StdioSession {
         })
     }
     /// A successful interrupt response is acknowledgement only, never completion.
-    pub fn interrupt(&mut self, thread: &str, turn: &str) -> Result<(), WireError> {
+    pub(crate) fn interrupt(&mut self, thread: &str, turn: &str) -> Result<(), WireError> {
         if !self.initialized {
             return Err(WireError::Unsupported);
         }

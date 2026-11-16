@@ -211,3 +211,45 @@ immediately before resolver opening, so a SQLite wait cannot preserve an expired
 input grant. A regression observes an actual SQLite busy callback during a blocked
 read, revokes authority before releasing the lock, and independently counts zero
 resolver opens. A compile-fail public API test rejects external permit construction.
+
+## Separately authorized durable turn cancellation candidate
+
+This PR #18-dependent source slice defines runspindle.native-turn-cancel.v1:
+version, the complete immutable native-turn request, and its acknowledged turn ID.
+Canonical JSON remains bounded and closed. A distinct CancelVerifier defaults to
+deny; neither Admission/session authority nor permission to submit authorizes
+cancellation. Only an already persisted authorized task request and acknowledged
+turn ID can be targeted. Unsolicited metadata or a lost start reply cannot supply
+that binding. Changed content/profile/thread/turn/lease targets reject.
+
+The bridge persists an uncertain cancel reservation before acquiring the existing
+ownership fence for interrupt. It rereads the complete persisted target under the
+writer lock and rechecks exact cancellation authority immediately before the
+effect. Public NativeIo dispatch consumes a non-cloneable CancelPermit whose fields
+and constructor are inaccessible externally. The former raw public StdioSession
+interrupt is crate-internal, eliminating a direct ID-only API bypass. Public API
+compile-fail tests cover both restrictions.
+
+At most one interrupt is dispatched for the request. Timeout, process crash,
+post-reservation denial and failed acknowledgement persistence never authorize
+retry. Exact repetition/reopen returns stored acknowledgement or Unknown without
+another interrupt. Acknowledged means protocol acknowledgement only; it changes
+neither native terminal metadata nor generic Adapter execution.
+
+Existing observed terminal metadata wins before cancellation and after a racing
+acknowledgement; completed/failed is not rewritten as cancelled. ObservedTerminal
+explicitly means the retained local native metadata, not independent task
+completion/acceptance authority or current native freshness. The bridge does not
+poll to invent terminal evidence and cannot exclude an unobserved remote race.
+A receive fence stays Unknown. Generic Peer.cancel remains disabled, so a generic
+Binding grant still cannot invoke this effect.
+
+Old task reservations without cancellation deserialize unchanged. Older binaries
+reject newly populated cancellation records; old writers must be stopped before
+any future deployment. No actual migration, qualified native cancellation,
+production grant provider or runtime activation is claimed. Synthetic tests use
+independent SQLite effect counts, actual writer contention/revocation with observed
+busy callback, and fresh-process post-effect crashes. Existing native transport
+tests independently check object-shaped interrupt acknowledgements. New mutations
+remove exact dispatch authority, reservation, no-retry and acknowledgement/terminal
+separation. Exact-source Rust checks and independent review remain required.
