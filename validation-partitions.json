@@ -29,7 +29,8 @@
       "lifecycle-mutations"
     ],
     "mutation_2": [
-      "durable-mutations"
+      "durable-mutations",
+      "durable-path-mutations"
     ],
     "mutation_3": [
       "native-mutations"

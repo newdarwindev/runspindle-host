@@ -222,6 +222,8 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         make_io: F,
         clock: C,
     ) -> Result<Self, Error> {
+        let path = path.as_ref();
+        crate::storage::require_durable_path(path)?;
         if !binding.valid() {
             return Err(Error::Malformed);
         }

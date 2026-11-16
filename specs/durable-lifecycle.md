@@ -34,3 +34,41 @@ reopened observation fences and stale CAS owners. The independent SQLite peer
 ledger makes duplicate effects fail and records actual call order. Mutation runs
 remove dispatch deduplication and the session fence in disposable source copies;
 only behavioral assertion failures count. See `docs/durable-lifecycle-tests.json`.
+
+## Ordinary filesystem path requirement
+
+Both Sqlite::open and NativeBridge::open reject an empty raw path, the exact
+:memory: token and raw lowercase file: URI prefix before opening SQLite or invoking
+a native factory. These entrypoints promise persistent reservation storage rather
+than accepting arbitrary SQLite connection strings. Explicit Memory remains the
+nondurable test API.
+
+Pinned rusqlite 0.32.1 Connection::open uses OpenFlags::default including
+SQLITE_OPEN_URI ([source](https://github.com/rusqlite/rusqlite/blob/v0.32.1/src/lib.rs),
+Git blob c3d3228260aba3e3808f3115d4535ef428ec52c4).
+SQLite documents that [empty/:memory: names](https://www.sqlite.org/inmemorydb.html)
+create temporary/in-memory databases discarded on close. Its
+[file URI interface](https://www.sqlite.org/uri.html) additionally permits memory
+mode and connection options such as VFS/locking behavior. All raw file: forms are
+unsupported by this ordinary-path API, including disk-backed URIs, instead of
+implementing a partial URI/options interpreter. A caller needing a literal Unix
+filename beginning file: can supply a directory-qualified ordinary path.
+
+Validation examines raw OS-encoded bytes without canonicalization, case folding,
+path-component normalization or UTF-8 conversion. Thus ./:memory:, a directory-qualified file: filename, uppercase File:
+and non-UTF8 Unix names are not mistaken for SQLite special connection strings.
+Their actual validity still depends on the OS and SQLite. Tests for colon and
+non-UTF8 filenames are Unix-specific; no Windows native acceptance is claimed.
+No filesystem, mount, permission or network settings are changed.
+
+This is not proof that a path resides on permanent media. Temporary filesystems,
+external deletion/replacement, symlink races, storage durability and power loss
+remain unqualified. The API does not choose or create an approved persistent
+location for the caller.
+
+Authored tests independently check the pinned SQLite special-name behavior,
+zero factory/database side effects for rejected aliases, file-backed state reopen,
+fresh child-process reuse of a literal ./:memory: file with one recorded peer
+effect, and ordinary filename compatibility. Two mutation checks remove the
+individual durable-entrypoint gates. Scaffold/Python checks are separate from
+pending Rust compilation, mutation execution and platform qualification.

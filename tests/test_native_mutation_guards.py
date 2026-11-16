@@ -27,6 +27,7 @@ class NativeMutationGuards(unittest.TestCase):
         for checker in (
             "check_native_mutations.py",
             "check_native_bridge_mutations.py",
+            "check_durable_path_mutations.py",
         ):
             for code, output, accepted in (
                 (0, "test result: ok", False),

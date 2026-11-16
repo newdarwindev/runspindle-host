@@ -144,6 +144,17 @@
         "tools/check_native_bridge_mutations.py"
       ],
       "timeout_seconds": 600
+    },
+    {
+      "id": "durable-path-mutations",
+      "command": [
+        "python3",
+        "tools/check_durable_path_mutations.py"
+      ],
+      "required_files": [
+        "tools/check_durable_path_mutations.py"
+      ],
+      "timeout_seconds": 600
     }
   ],
   "lockfiles": [
