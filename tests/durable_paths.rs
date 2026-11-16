@@ -107,7 +107,10 @@ fn durable_paths_reject_ephemeral_and_uri_aliases_before_factory_or_database() {
         "file:///",
         &file_uri,
     ] {
-        assert!(matches!(Sqlite::open(path), Err(Error::Unsupported)), "{path}");
+        assert!(
+            matches!(Sqlite::open(path), Err(Error::Unsupported)),
+            "{path}"
+        );
         assert!(
             matches!(
                 bridge(Path::new(path), &effects, &calls),
@@ -221,10 +224,30 @@ fn durable_paths_prefixed_memory_filename_keeps_reservation_in_fresh_processes()
 }
 #[cfg(unix)]
 #[test]
-fn durable_paths_non_utf8_ordinary_path_is_not_rejected_by_policy() {
+fn durable_paths_non_utf8_ordinary_path_reports_platform_storage_outcome() {
     use std::os::unix::ffi::OsStringExt;
     let t = Temp::new();
-    let path = t.0.join(std::ffi::OsString::from_vec(b"ordinary-\xff.sqlite".to_vec()));
-    Sqlite::open(&path).unwrap();
-    assert!(path.is_file());
+    let path = t.0.join(std::ffi::OsString::from_vec(
+        b"ordinary-\xff.sqlite".to_vec(),
+    ));
+    #[cfg(target_os = "macos")]
+    {
+        // This macOS filesystem rejects the invalid UTF-8 name. The path policy
+        // still admits its ordinary spelling; SQLite reports the OS failure.
+        let calls = AtomicU64::new(0);
+        let effects = t.0.join("effects.sqlite");
+        assert!(matches!(Sqlite::open(&path), Err(Error::Storage)));
+        assert!(matches!(
+            bridge(&path, &effects, &calls),
+            Err(Error::Storage)
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(!path.exists());
+        assert!(!effects.exists());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Sqlite::open(&path).unwrap();
+        assert!(path.is_file());
+    }
 }
