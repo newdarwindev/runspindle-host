@@ -13,6 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
+        "native_ambiguous_reply": (
+            "if result.is_some() == error.is_some() || frame.get(\"params\").is_some() {",
+            "if false && (result.is_some() == error.is_some() || frame.get(\"params\").is_some()) {",
+        ),
+        "native_scalar_interrupt_ack": (
+            "if !reply.is_object() {",
+            "if false && !reply.is_object() {",
+        ),
         "native_unknown_cleanup": (
             "if cleanup_permitted(receipt) {",
             "if true {",

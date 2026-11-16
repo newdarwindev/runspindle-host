@@ -52,3 +52,10 @@ workspace. Rust formatting, Rust tests/clippy and behavioral mutation execution
 are not yet run on this revision because this workspace has no Rust toolchain.
 No dependency, lockfile, binary pin or operational activation has changed. The
 existing actual-native evidence is historical and does not qualify this change.
+
+
+The subsequent wire-validation candidate tightens the existing StdioSession
+reply/notification boundary, described in [the wire mapping](../specs/native-stdio.md#reply-and-notification-validation).
+Cloud scaffold and all 65 Python checks passed during implementation. The new
+Rust subprocess tests and mutations require exact-source pinned-lane verification;
+no Rust or native-peer result is claimed by this source-only note.
