@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "evidence_class": "manual_bounded_synthetic_component_verification",
+  "tested_source_commit": "a9d38190d0f0b0f3846bb45425f3f7809655bdb7",
+  "tested_source_tree": "ef955c059a1bf5e07180890ac78d04f6496ebe4a",
+  "source_verification": {
+    "tree_verified": true,
+    "boundary": "Exact tested source/tree verified in the prepared lane. This supplemental evidence file was added afterward; evidence-head tests are not claimed.",
+    "tracked_blobs_verified": 162
+  },
+  "source_sha256": {
+    "Cargo.lock": "daf4f482906c3a53cfac842fb957908163cd8e92ffa219e7774c70da589230e5",
+    "src/native.rs": "3413fa883bfb04741e975dd6c26b904d8381278968ea505ce81e407eeffb5ec5",
+    "tools/check_native_mutations.py": "e214fc706a307da37911e20e982967eb4cbdf25442ac8bae583bb5f7622ea48f",
+    "src/native_bridge.rs": "b35f10e6c2f0373737474d5a8afada27b60286d17061064459409099ceb8c7d5",
+    "src/native_turn.rs": "ffffbca9d5decb39e6709b141a6ddb71e34f213fde4ec23862bd060a4b0647eb",
+    "tests/native_turn.rs": "be84959ae4127f80610c98751a94c0db330d80c482fbe1864c5264a431c397cd",
+    "tools/check_native_turn_mutations.py": "13b6573eeab69074eda61a4fa7c2dae84be9c6a2fdf2ba627690f333b5d41065"
+  },
+  "toolchain": {
+    "rust": "1.94.1",
+    "cargo": "1.94.1",
+    "rustfmt": "1.8.0-stable",
+    "clippy": "0.1.94",
+    "python": "3.12.16",
+    "rust_archive_sha256": "294b3d81fa72e62581276290c60c81eb8b58498d333d422ca1dfc432877d0c40",
+    "vendor_crates_verified": 38,
+    "full_c_toolchain_qualification": "unknown",
+    "rust_archive_verification": "Verified once before the sequence, not before each stage.",
+    "per_stage_preflight_checks": [
+      "Seven installed binary hashes",
+      "38 crate archives and all vendor files",
+      "Source and Cargo.lock identity",
+      "CC/AR identities and execution-user checks"
+    ],
+    "preflight_evidence_boundary": "Final stage receipts contain categorical preflight assertions, not embedded digests. This sanitized supplement does not reproduce private receipts.",
+    "version_evidence_boundary": "Tool version strings come from earlier prepared-toolchain probes, not fresh version probes during the final run."
+  },
+  "environment": {
+    "clean_environment": true,
+    "offline": true,
+    "locked": true,
+    "cargo_build_jobs": 1,
+    "rust_test_threads": 1,
+    "private_directories": [
+      "HOME",
+      "TMPDIR",
+      "CARGO_HOME",
+      "vendor",
+      "CARGO_TARGET_DIR"
+    ],
+    "explicit_tools": [
+      "RUSTC",
+      "RUSTDOC",
+      "GCC 16",
+      "ar"
+    ],
+    "python_bytecode_disabled": true,
+    "python_user_site_disabled": true
+  },
+  "execution_bounds": {
+    "per_command_timeout_seconds": 90,
+    "kill_after_seconds": 5,
+    "cpu_seconds": 60,
+    "process_limit": 1280,
+    "file_size_limit_zsh_blocks": 262144,
+    "mutation_execution": "Reviewed allowlisted Cargo wrapper enforced offline/locked/jobs1 and bounded child execution. A separate failure marker guarded infrastructure failures versus expected behavioral failures."
+  },
+  "checks": [
+    {
+      "name": "rust_format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.06222,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "rust_tests",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 29.76904,
+      "tests_passed": 82,
+      "test_breakdown": {
+        "library": 32,
+        "durable": 8,
+        "lifecycle": 18,
+        "native_bridge": 18,
+        "native_turn": 6,
+        "compile_fail_doctests": 1
+      },
+      "counting_note": "82 runtime tests plus one compile-fail documentation test; nested fixture subprocess summaries are not additional tests.",
+      "stdout_sha256": "995587307211c5af26a8272bb20c8dceac84ecf6fd216df70176d7fc390b8ae1",
+      "stderr_sha256": "afbea92b0bf758e0b03521114dfe319f869b57ca1faea7b197c93fc3be326099"
+    },
+    {
+      "name": "rust_clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 5.58613,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "994f0c793388c82b68daa1b938daaccfb0a108b3d229e40d27c55fcda50ccffb"
+    },
+    {
+      "name": "native_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 48.21353,
+      "mutations_detected_behaviorally": 8,
+      "mutations": [
+        "native_observed_poison",
+        "native_setup_observed_cleanup",
+        "native_ambiguous_reply",
+        "native_scalar_interrupt_ack",
+        "native_unknown_cleanup",
+        "native_duplicate_json_members",
+        "native_thread_rebinding",
+        "native_unbounded_frame"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "3efe3e84ddd25b66c64c04bfa7199501fba2bba0eb0775ef71093e8f4fe35487",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "native_turn_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_turn_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 42.37744,
+      "mutations_detected_behaviorally": 4,
+      "mutations": [
+        "native_turn_input_authority",
+        "native_turn_dispatch_authority",
+        "native_turn_reservation",
+        "native_turn_no_retry"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "ca36c48a64e29fa9ca5741b4ecaac719b3ea3e98f26624c3567e1d03c751b8d8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "historical_evidence_preserved": [
+    "docs/native-transport-tests.json",
+    "docs/native-owner-fencing-evidence.json",
+    "docs/IMPLEMENTATION_EVIDENCE.md",
+    "docs/native-wire-validation-evidence.json",
+    "docs/native-startup-cleanup-evidence.json",
+    "docs/native-observed-poison-evidence.json"
+  ],
+  "not_qualified": [
+    "github_ci",
+    "runner_image",
+    "live_acceptance",
+    "actual_os_native_peer_conformance",
+    "native_provider_execution",
+    "native_probe",
+    "full_c_toolchain"
+  ],
+  "limitations": [
+    "Synthetic task authority and injected input readers only; no production input store, grant issuer or workflow activation is installed.",
+    "The closed profile requests protocol settings, not proven OS/tool confinement; inherited plugins and unobserved active remote turns remain unqualified.",
+    "A returned turn ID acknowledges native identity, not proof of a new turn, task completion, cancellation, validation or acceptance.",
+    "Raw input is absent from workflow/journal history; tests use only synthetic input and peers.",
+    "Task-terminal promotion and native cancellation from the new task-turn binding remain unsupported.",
+    "No actual native/provider process is invoked by this evidence; the wire test uses a synthetic Python child.",
+    "Other mutation suites were not rerun for this source.",
+    "Earlier 5bdb6ec receipts remain separate from final formatted-source results.",
+    "Issues 8 and 9 and composition issue 43 remain partial; no acceptance gate or historical evidence is replaced."
+  ],
+  "dependency": {
+    "pull_request": 17,
+    "base_commit": "c9901ef46445eebe411c3d14fb55ab2983839def",
+    "status_at_preparation": "Stacked on unmerged PR 17; composition native-turn contract and cross-language parity tracked separately."
+  },
+  "cloud_source_checks": {
+    "source_commit": "5bdb6ec991d510cd9c3633eb2f2a2af980b95b0e",
+    "scaffold": "passed",
+    "python_tests_passed": 65,
+    "python_test_duration_seconds": 7.75,
+    "boundary": "Pre-format corrected source, not relabelled as final-source or CI qualification."
+  },
+  "formatted_cloud_source_checks": {
+    "source_commit": "a9d38190d0f0b0f3846bb45425f3f7809655bdb7",
+    "scaffold": "passed",
+    "python_tests_passed": 65,
+    "python_test_duration_seconds": 6.523,
+    "boundary": "Separate cloud source checks after exact formatting and mutation-anchor updates, before evidence-only commit."
+  },
+  "cross_language_parity": {
+    "status": "pending",
+    "boundary": "Independent composition Python vectors exist separately; no Rust/Python interoperability execution is claimed by this receipt."
+  }
+}

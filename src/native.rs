@@ -100,6 +100,12 @@ impl<'de> Deserialize<'de> for UniqueValue {
     }
 }
 
+pub(crate) fn unique_json(bytes: &[u8]) -> Result<Value, WireError> {
+    serde_json::from_slice::<UniqueValue>(bytes)
+        .map(|v| v.0)
+        .map_err(|_| WireError::Malformed)
+}
+
 /// Reads one newline-delimited frame with a hard allocation bound, including newline.
 /// No JSON-RPC 2.0 marker is required by the pinned app-server protocol.
 pub fn read_frame(reader: &mut impl BufRead) -> Result<Value, WireError> {
@@ -586,6 +592,34 @@ impl StdioSession {
                 Err(error)
             }
         }
+    }
+    /// Crate-internal task effect, reached through the separately authorized bridge.
+    pub(crate) fn start_text_turn(
+        &mut self,
+        thread: &str,
+        text: &str,
+        model: &str,
+    ) -> Result<String, WireError> {
+        if !self.initialized {
+            return Err(WireError::Unsupported);
+        }
+        id(&json!(thread))?;
+        id(&json!(model))?;
+        let reply = self.rpc(
+            "turn/start",
+            json!({
+                "threadId":thread,
+                "input":[{"type":"text","text":text,"text_elements":[]}],
+                "model":model,
+                "approvalPolicy":"never",
+                "sandboxPolicy":{"type":"readOnly","networkAccess":false}
+            }),
+        )?;
+        let result = id(&reply["turn"]["id"]);
+        if result.is_err() {
+            self.close();
+        }
+        result
     }
     pub fn read_thread(&mut self, thread: &str) -> Result<NativeIds, WireError> {
         if !self.initialized {
@@ -1378,6 +1412,27 @@ for line in sys.stdin:
             fs::read_to_string(ledger)
                 .unwrap()
                 .matches("thread/start")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn native_task_turn_maps_only_closed_profile_and_actual_id() {
+        let (mut peer, ledger) = scripted(
+            "  assert r['method']=='turn/start'
+  assert r['params']=={'threadId':'thread-native','input':[{'type':'text','text':'synthetic','text_elements':[]}],'model':'synthetic-model','approvalPolicy':'never','sandboxPolicy':{'type':'readOnly','networkAccess':False}}
+  print(json.dumps({'id':r['id'],'result':{'turn':{'id':'turn-native'}}}),flush=True)"
+        );
+        peer.initialize().unwrap();
+        assert_eq!(
+            peer.start_text_turn("thread-native", "synthetic", "synthetic-model"),
+            Ok("turn-native".into())
+        );
+        assert_eq!(
+            fs::read_to_string(ledger)
+                .unwrap()
+                .matches("turn/start")
                 .count(),
             1
         );
