@@ -59,3 +59,9 @@ reply/notification boundary, described in [the wire mapping](../specs/native-std
 Cloud scaffold and all 65 Python checks passed during implementation. The new
 Rust subprocess tests and mutations require exact-source pinned-lane verification;
 no Rust or native-peer result is claimed by this source-only note.
+
+
+A further PR #15-dependent setup-cleanup candidate establishes owned-child cleanup
+before fallible I/O worker setup. See [the setup mapping](../specs/observed-child-shutdown.md#fallible-worker-setup-candidate).
+The authored synthetic subprocess tests and mutation require new exact-source Rust
+verification; earlier wire/ownership results do not qualify this revision.

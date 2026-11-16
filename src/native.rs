@@ -29,6 +29,8 @@ const DEADLINE: Duration = Duration::from_secs(5);
 pub enum WireError {
     Pin,
     Io,
+    /// Startup failed and owned-child or I/O shutdown could not be confirmed.
+    ShutdownUnknown,
     Closed,
     Malformed,
     Oversized,
@@ -344,14 +346,18 @@ impl StdioSession {
             .mode(0o700)
             .create(directory)
             .map_err(|_| WireError::Io)?;
-        let result = Self::spawn_inner(binary, directory);
-        if result.is_err() {
-            let _ = fs::remove_dir_all(directory);
+        // Preparation failures have no child. Once a child exists, its owning
+        // session alone decides whether observed shutdown permits cleanup.
+        match Self::spawn_child(binary, directory) {
+            Ok(child) => Self::from_child(child, directory.to_owned()),
+            Err(error) => {
+                let _ = fs::remove_dir_all(directory);
+                Err(error)
+            }
         }
-        result
     }
     #[cfg(unix)]
-    fn spawn_inner(binary: &Path, directory: &Path) -> Result<Self, WireError> {
+    fn spawn_child(binary: &Path, directory: &Path) -> Result<Child, WireError> {
         use std::os::unix::fs::PermissionsExt;
         if std::env::consts::OS != "macos" || std::env::consts::ARCH != "aarch64" {
             return Err(WireError::Pin);
@@ -391,41 +397,29 @@ impl StdioSession {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|_| WireError::Io)?;
-        Self::from_child(child, directory.to_owned())
+        Ok(child)
     }
-    fn from_child(mut child: Child, directory: PathBuf) -> Result<Self, WireError> {
-        let mut stdin = child.stdin.take().ok_or(WireError::Io)?;
-        let (writer, requests) =
-            mpsc::sync_channel::<(Vec<u8>, mpsc::Sender<Result<(), WireError>>)>(1);
-        let writer_thread = std::thread::spawn(move || {
-            while let Ok((bytes, done)) = requests.recv() {
-                let result = stdin.write_all(&bytes).map_err(|_| WireError::Io);
-                let failed = result.is_err();
-                let _ = done.send(result);
-                if failed {
-                    break;
-                }
-            }
+    fn from_child(child: Child, directory: PathBuf) -> Result<Self, WireError> {
+        let (session, result) = Self::configure_child(child, directory, |worker| {
+            std::thread::Builder::new().spawn(worker)
         });
-        let input = Some(writer);
-        let output = child.stdout.take().ok_or(WireError::Io)?;
+        result.map(|()| session)
+    }
+    // Establish ownership before taking pipes or starting workers. Returning the
+    // owned session even on error keeps cleanup in the same Drop/receipt path.
+    fn configure_child(
+        child: Child,
+        directory: PathBuf,
+        mut spawn_worker: impl FnMut(
+            Box<dyn FnOnce() + Send>,
+        ) -> std::io::Result<std::thread::JoinHandle<()>>,
+    ) -> (Self, Result<(), WireError>) {
+        let (writer, requests) = mpsc::sync_channel::<WriteRequest>(1);
         let (sender, incoming) = mpsc::sync_channel(MAX_PENDING);
         let reader_failed = Arc::new(AtomicBool::new(false));
-        let failed_reader = Arc::clone(&reader_failed);
-        let reader_thread = std::thread::spawn(move || {
-            let mut reader = BufReader::new(output);
-            loop {
-                let frame = read_frame(&mut reader);
-                let failed = frame.is_err();
-                if sender.try_send(frame).is_err() || failed {
-                    failed_reader.store(true, Ordering::Release);
-                    break;
-                }
-            }
-        });
-        Ok(Self {
+        let mut session = Self {
             child,
-            input,
+            input: Some(writer),
             incoming,
             reader_failed,
             notifications: VecDeque::new(),
@@ -433,9 +427,52 @@ impl StdioSession {
             initialized: false,
             closed: false,
             directory,
-            io_threads: vec![writer_thread, reader_thread],
+            io_threads: Vec::new(),
             shutdown_receipt: None,
-        })
+        };
+        let result = (|| {
+            // Validate both pipe handles before starting either worker.
+            let mut stdin = session.child.stdin.take().ok_or(WireError::Io)?;
+            let output = session.child.stdout.take().ok_or(WireError::Io)?;
+            let writer_thread = spawn_worker(Box::new(move || {
+                while let Ok((bytes, done)) = requests.recv() {
+                    let result = stdin.write_all(&bytes).map_err(|_| WireError::Io);
+                    let failed = result.is_err();
+                    let _ = done.send(result);
+                    if failed {
+                        break;
+                    }
+                }
+            }))
+            .map_err(|_| WireError::Io)?;
+            session.io_threads.push(writer_thread);
+            let failed_reader = Arc::clone(&session.reader_failed);
+            let reader_thread = spawn_worker(Box::new(move || {
+                let mut reader = BufReader::new(output);
+                loop {
+                    let frame = read_frame(&mut reader);
+                    let failed = frame.is_err();
+                    if sender.try_send(frame).is_err() || failed {
+                        failed_reader.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            }))
+            .map_err(|_| WireError::Io)?;
+            session.io_threads.push(reader_thread);
+            Ok(())
+        })();
+        let result = if result.is_err() {
+            let receipt = session.close_observed();
+            if !cleanup_permitted(receipt) {
+                Err(WireError::ShutdownUnknown)
+            } else {
+                result
+            }
+        } else {
+            result
+        };
+        (session, result)
     }
     fn send(&mut self, value: Value) -> Result<(), WireError> {
         if self.closed || self.reader_failed.load(Ordering::Acquire) {
@@ -1146,5 +1183,136 @@ for line in sys.stdin:
             assert_eq!(ids.item_id.as_deref(), item);
         }
         assert!(peer.take_notification("native-123").is_none());
+    }
+    fn setup_child(piped_stdin: bool, piped_stdout: bool) -> (Child, PathBuf) {
+        let directory = std::env::temp_dir().join(format!(
+            "runspindle-setup-{}-{}",
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        let marker = directory.join("started");
+        let mut child = Command::new("python3")
+            .args([
+                "-u",
+                "-c",
+                "import sys,time; open(sys.argv[1],'w').write('started'); time.sleep(60)",
+            ])
+            .arg(&marker)
+            .stdin(if piped_stdin {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(if piped_stdout {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + DEADLINE;
+        while !marker.exists() {
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = observe_exit(&mut child, Instant::now() + DEADLINE);
+                panic!("synthetic setup child did not start");
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(child.try_wait().unwrap().is_none());
+        (child, directory)
+    }
+    #[test]
+    fn native_setup_worker_failures_reap_owned_child_and_join_started_worker() {
+        for fail_at in [1, 2] {
+            let (child, directory) = setup_child(true, true);
+            let process_id = child.id();
+            let finished = Arc::new(AtomicU64::new(0));
+            let count = Arc::clone(&finished);
+            let mut attempts = 0;
+            let started = Instant::now();
+            let (mut session, result) =
+                StdioSession::configure_child(child, directory.clone(), |worker| {
+                    attempts += 1;
+                    if attempts == fail_at {
+                        return Err(std::io::Error::other("synthetic worker setup failure"));
+                    }
+                    let count = Arc::clone(&count);
+                    std::thread::Builder::new().spawn(move || {
+                        worker();
+                        count.fetch_add(1, Ordering::SeqCst);
+                    })
+                });
+            assert_eq!(result, Err(WireError::Io));
+            assert!(started.elapsed() < Duration::from_secs(7));
+            assert_eq!(attempts, fail_at);
+            assert_eq!(session.child.id(), process_id);
+            // Independent owned OS handle readback, not just the shutdown receipt.
+            assert!(session.child.try_wait().unwrap().is_some());
+            assert_eq!(finished.load(Ordering::SeqCst), (fail_at - 1) as u64);
+            let receipt = session.shutdown_receipt.unwrap();
+            assert!(receipt.io_threads_stopped);
+            assert!(matches!(receipt.child_exit, ChildExit::Exited { .. }));
+            assert_eq!(session.close_observed(), receipt);
+            assert_eq!(session.start_empty_thread(), Err(WireError::Unsupported));
+            drop(session);
+            assert!(!directory.exists());
+        }
+    }
+    #[test]
+    fn native_setup_missing_pipes_reaps_before_any_worker_starts() {
+        for (stdin, stdout) in [(false, true), (true, false)] {
+            let (child, directory) = setup_child(stdin, stdout);
+            let mut attempts = 0;
+            let (mut session, result) =
+                StdioSession::configure_child(child, directory.clone(), |_worker| {
+                    attempts += 1;
+                    Err(std::io::Error::other("worker must not start"))
+                });
+            assert_eq!(result, Err(WireError::Io));
+            assert_eq!(attempts, 0);
+            assert!(session.child.try_wait().unwrap().is_some());
+            assert!(session.shutdown_receipt.unwrap().io_threads_stopped);
+            drop(session);
+            assert!(!directory.exists());
+        }
+    }
+
+    #[test]
+    fn native_setup_worker_panic_reports_unknown_and_retains_directory() {
+        let (child, directory) = setup_child(true, true);
+        let mut attempts = 0;
+        let (mut session, result) =
+            StdioSession::configure_child(child, directory.clone(), |worker| {
+                attempts += 1;
+                if attempts == 2 {
+                    return Err(std::io::Error::other("synthetic second worker failure"));
+                }
+                std::thread::Builder::new().spawn(move || {
+                    drop(worker);
+                    panic!("synthetic I/O worker panic");
+                })
+            });
+        assert_eq!(result, Err(WireError::ShutdownUnknown));
+        assert!(session.child.try_wait().unwrap().is_some());
+        assert!(session.io_threads.is_empty()); // Panicked worker was joined.
+        let receipt = session.shutdown_receipt.unwrap();
+        assert!(!receipt.io_threads_stopped);
+        assert_eq!(session.close_observed(), receipt);
+        drop(session);
+        assert!(directory.is_dir());
+        // Test-only cleanup after independent child exit and worker-join checks.
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn native_setup_public_constructor_drops_failed_owned_session() {
+        let (child, directory) = setup_child(false, true);
+        assert!(matches!(
+            StdioSession::from_child(child, directory.clone()),
+            Err(WireError::Io)
+        ));
+        assert!(!directory.exists());
     }
 }

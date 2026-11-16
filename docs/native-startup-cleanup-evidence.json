@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "evidence_class": "manual_bounded_synthetic_component_verification",
+  "tested_source_commit": "936c5d41010c535ac50982c16151e378cdd2ba3c",
+  "tested_source_tree": "206d226c1cfe498d0a6792433faabfbabb9f8dd2",
+  "source_verification": {
+    "tree_verified": true,
+    "boundary": "Exact tested source/tree verified in the prepared lane. This supplemental evidence file was added afterward; evidence-head tests are not claimed."
+  },
+  "source_sha256": {
+    "Cargo.lock": "daf4f482906c3a53cfac842fb957908163cd8e92ffa219e7774c70da589230e5",
+    "src/native.rs": "1e024db2de6b06c428f4e2243c1070b7b459580f5b27dc82f85ae25cf072c3c4",
+    "tools/check_native_mutations.py": "180a1d627d411d7d6ef822d8c0898839612b8294db932a44a4a4906f42374db9"
+  },
+  "toolchain": {
+    "rust": "1.94.1",
+    "cargo": "1.94.1",
+    "rustfmt": "1.8.0-stable",
+    "clippy": "0.1.94",
+    "python": "3.12.16",
+    "rust_archive_sha256": "294b3d81fa72e62581276290c60c81eb8b58498d333d422ca1dfc432877d0c40",
+    "vendor_crates_verified": 38,
+    "full_c_toolchain_qualification": "unknown",
+    "rust_archive_verification": "Verified once before the sequence, not before each stage.",
+    "per_stage_preflight_checks": [
+      "Seven installed binary hashes",
+      "38 crate archives and all vendor files",
+      "Source and Cargo.lock identity",
+      "CC/AR identities and execution-user checks"
+    ],
+    "preflight_evidence_boundary": "Final stage receipts include an explicit preflight field recording the checks; this sanitized supplement does not reproduce private receipts or claim that it contains every preflight digest.",
+    "version_evidence_boundary": "Rust 1.94.1 is recorded in saved compiler target metadata. Cargo, rustfmt and Clippy version strings come from earlier prepared-toolchain probes, not fresh version probes during the final run."
+  },
+  "environment": {
+    "clean_environment": true,
+    "offline": true,
+    "locked": true,
+    "cargo_build_jobs": 1,
+    "rust_test_threads": 1,
+    "private_directories": [
+      "HOME",
+      "TMPDIR",
+      "CARGO_HOME",
+      "vendor",
+      "CARGO_TARGET_DIR"
+    ],
+    "explicit_tools": [
+      "RUSTC",
+      "RUSTDOC",
+      "GCC 16",
+      "ar"
+    ],
+    "python_bytecode_disabled": true,
+    "python_user_site_disabled": true
+  },
+  "execution_bounds": {
+    "per_command_timeout_seconds": 90,
+    "kill_after_seconds": 5,
+    "cpu_seconds": 60,
+    "process_limit": 1280,
+    "file_size_limit_zsh_blocks": 262144,
+    "mutation_execution": "Reviewed allowlisted Cargo wrapper enforced offline/locked/jobs1 and bounded child execution. A separate failure marker guarded infrastructure failures versus expected behavioral failures."
+  },
+  "checks": [
+    {
+      "name": "rust_format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.05831,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "rust_tests",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 28.17342,
+      "tests_passed": 72,
+      "test_breakdown": {
+        "library": 28,
+        "durable": 8,
+        "lifecycle": 18,
+        "native_bridge": 18,
+        "doctests": 0
+      },
+      "counting_note": "Nested fixture subprocess summaries are not additional tests.",
+      "stdout_sha256": "1394fc52f62bebc96903b8448ed838b3833ea25485bc52dc75fede53cdce35ec",
+      "stderr_sha256": "94acdd165a32e50fdf337a4192303762ca64bee8ff11eda31ee4ef3a7f47418f"
+    },
+    {
+      "name": "rust_clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--jobs",
+        "1",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 5.3926,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "1ed3d4cabe79e602eaa3a274de4d5b8f819cb663e6f4795c00caa7382006982f"
+    },
+    {
+      "name": "native_mutations",
+      "command": [
+        "python3.12",
+        "-B",
+        "-s",
+        "tools/check_native_mutations.py"
+      ],
+      "command_context": "Under the reviewed bounded Cargo wrapper described in execution_bounds.",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 39.02201,
+      "mutations_detected_behaviorally": 7,
+      "mutations": [
+        "native_setup_observed_cleanup",
+        "native_ambiguous_reply",
+        "native_scalar_interrupt_ack",
+        "native_unknown_cleanup",
+        "native_duplicate_json_members",
+        "native_thread_rebinding",
+        "native_unbounded_frame"
+      ],
+      "infrastructure_failure_marker": false,
+      "stdout_sha256": "724062dfee2b6d7ad93c63b51804bc23d42c7d97e37eaab610d1d79af4f34327",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "historical_evidence_preserved": [
+    "docs/native-transport-tests.json",
+    "docs/native-owner-fencing-evidence.json",
+    "docs/IMPLEMENTATION_EVIDENCE.md",
+    "docs/native-wire-validation-evidence.json"
+  ],
+  "not_qualified": [
+    "github_ci",
+    "runner_image",
+    "live_acceptance",
+    "actual_os_native_peer_conformance",
+    "native_provider_execution",
+    "native_probe",
+    "full_c_toolchain"
+  ],
+  "limitations": [
+    "Subprocess peers are synthetic; actual native execution, interruption and task completion are not qualified.",
+    "The injected setup failures cover missing pipes, worker creation failure and worker panic, not actual operating-system resource exhaustion or kill/wait failure injection.",
+    "Other mutation suites were not rerun for this startup-cleanup source.",
+    "Issues 8 and 9 remain partial; source checks do not close broad acceptance gaps.",
+    "Earlier d3ff764 checks remain separate from the final formatted-source receipts.",
+    "No existing evidence file or operational gate is replaced by this supplement."
+  ],
+  "dependency": {
+    "pull_request": 15,
+    "base_commit": "2bc82710cfbaff1ad07938233b1d45117eaf914f",
+    "status_at_preparation": "Stacked on unmerged PR 15; no broad issue closure."
+  },
+  "cloud_source_checks": {
+    "source_commit": "d3ff764cb0412a13100736fd64c5cd961ffd1aef",
+    "scaffold": "passed",
+    "python_tests_passed": 65,
+    "python_test_duration_seconds": 5.79,
+    "boundary": "Before formatting-only commit 936c5d; not relabelled as final-source or CI qualification."
+  }
+}
