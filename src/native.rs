@@ -513,6 +513,11 @@ impl StdioSession {
                     mpsc::RecvTimeoutError::Timeout => WireError::Timeout,
                     _ => WireError::Closed,
                 })??;
+            // A reply queued before the reader poisoned the stream is not a
+            // fresh success. This observes the flag here, not future failures.
+            if self.reader_failed.load(Ordering::Acquire) {
+                return Err(WireError::Closed);
+            }
             if frame.get("id").is_some() {
                 if frame["id"] != request_id || frame.get("method").is_some() {
                     return Err(WireError::Unexpected);
@@ -1314,5 +1319,67 @@ for line in sys.stdin:
             Err(WireError::Io)
         ));
         assert!(!directory.exists());
+    }
+
+    #[test]
+    fn native_observed_reader_failure_rejects_queued_success_without_retry() {
+        for tail in [
+            "  print('not-json',flush=True)",
+            "  print('x'*65537,flush=True)",
+            "  for _ in range(40): print(json.dumps({'method':'thread/started','params':{'thread':{'id':'native-123'}}}),flush=True)",
+            "  sys.exit(0)",
+        ] {
+            let (mut peer, ledger) = scripted(&format!(
+                "  print(json.dumps({{'id':r['id'],'result':{{'thread':{{'id':'native-123'}}}}}}),flush=True)
+{tail}"
+            ));
+            peer.initialize().unwrap();
+            // Delay only the write-completion acknowledgement. The real writer
+            // and reader run normally; the RPC consumer cannot drain the queue
+            // until the reader has independently observed the fixture failure.
+            let original = peer.input.take().unwrap();
+            let (relay, requests) = mpsc::sync_channel::<WriteRequest>(1);
+            let failed = Arc::clone(&peer.reader_failed);
+            peer.input = Some(relay);
+            peer.io_threads.push(std::thread::spawn(move || {
+                if let Ok((bytes, completion)) = requests.recv() {
+                    let (done, written) = mpsc::channel();
+                    original.send((bytes, done)).unwrap();
+                    written.recv_timeout(DEADLINE).unwrap().unwrap();
+                    let deadline = Instant::now() + DEADLINE;
+                    while !failed.load(Ordering::Acquire) && Instant::now() < deadline {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    assert!(failed.load(Ordering::Acquire), "fixture reader did not fail");
+                    completion.send(Ok(())).unwrap();
+                }
+            }));
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+            assert!(peer.reader_failed.load(Ordering::Acquire));
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+            assert_eq!(
+                fs::read_to_string(ledger).unwrap().matches("thread/start").count(),
+                1
+            );
+            let receipt = peer.close_observed();
+            assert!(receipt.io_threads_stopped);
+            assert!(matches!(receipt.child_exit, ChildExit::Exited { .. }));
+        }
+    }
+    #[test]
+    fn native_unpoisoned_reply_remains_accepted() {
+        let (mut peer, ledger) = scripted(
+            "  print(json.dumps({'id':r['id'],'result':{'thread':{'id':'native-123'}}}),flush=True)"
+        );
+        peer.initialize().unwrap();
+        assert_eq!(peer.start_empty_thread(), Ok("native-123".into()));
+        assert!(!peer.reader_failed.load(Ordering::Acquire));
+        assert_eq!(
+            fs::read_to_string(ledger)
+                .unwrap()
+                .matches("thread/start")
+                .count(),
+            1
+        );
     }
 }

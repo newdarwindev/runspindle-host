@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
+        "native_observed_poison": (
+            "if self.reader_failed.load(Ordering::Acquire) {",
+            "if false && self.reader_failed.load(Ordering::Acquire) {",
+        ),
         "native_setup_observed_cleanup": (
             "let result = if result.is_err() {",
             "let result = if false && result.is_err() {",
