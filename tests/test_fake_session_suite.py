@@ -50,3 +50,59 @@ class FakeSuiteTests(unittest.TestCase):
         )
         self.assertEqual(code, 124)
         self.assertIn(b"timed out", output)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
+    def test_sigterm_cleans_owned_child_and_descendant(self):
+        import os
+        import subprocess
+        import tempfile
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "pids.json"
+            child = (
+                "import subprocess,sys,os,json,time; "
+                "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+                f"open({str(marker) + '.tmp'!r},'w').write(json.dumps([os.getpid(),p.pid])); "
+                f"os.replace({str(marker) + '.tmp'!r},{str(marker)!r}); "
+                "time.sleep(60)"
+            )
+            owner = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.path.insert(0,'tools'); "
+                    f"import check_fake_sessions as s; s.run({[sys.executable, '-c', child]!r},120)",
+                ],
+                cwd=suite.ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            pids = []
+            try:
+                deadline = time.monotonic() + 10
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(marker.exists(), "owned child did not start")
+                pids = json.loads(marker.read_text())
+                owner.terminate()
+                owner.communicate(timeout=10)
+                self.assertNotEqual(owner.returncode, 0)
+                for pid in pids:
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline:
+                        stat = Path(f"/proc/{pid}/stat")
+                        if not stat.exists() or stat.read_text().split()[2] == "Z":
+                            break
+                        time.sleep(0.02)
+                    else:
+                        self.fail(f"owned process {pid} survived cancellation")
+            finally:
+                if owner.poll() is None:
+                    owner.kill()
+                owner.communicate(timeout=10)
+                for pid in pids:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass

@@ -59,8 +59,8 @@ def deny_network() -> None:
                 or library.seccomp_rule_add(context, 0x80000000, number, 0) != 0
             ):
                 raise RuntimeError(f"blocked: syscall rule {name}")
-        # KILL_PROCESS: unexpected network use cannot be caught and silently
-        # converted into passing fallback behavior by a test or its descendants.
+        # KILL_PROCESS prevents the caller from catching network failure. A
+        # parent can still ignore a descendant termination; see evidence gap.
         if library.seccomp_load(context) != 0:
             raise RuntimeError("blocked: seccomp_load")
     finally:
@@ -68,30 +68,50 @@ def deny_network() -> None:
 
 
 def run(command: list[str], timeout: int) -> tuple[int, bytes]:
-    process = subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()), "--exec", *command],
-        cwd=ROOT,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        close_fds=True,
-    )
+    def cancelled(signum: int, _frame: object) -> None:
+        raise SystemExit(128 + signum)
+
+    previous = signal.signal(signal.SIGTERM, cancelled)
+    process = None
     try:
+        # Defer termination until the owned process handle is available, so a
+        # signal during spawn cannot strand an untracked new-session child.
+        blocked = signal.pthread_sigmask(
+            signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT}
+        )
+        try:
+            process = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve()), "--exec", *command],
+                cwd=ROOT,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+            )
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
         output, _ = process.communicate(timeout=timeout)
         return process.returncode, output
     except subprocess.TimeoutExpired as error:
         return 124, (error.output or b"") + b"\ncheck timed out\n"
     finally:
-        # Clean the entire owned process group on success, failure or cancel,
-        # including descendants that outlive the direct child.
+        # Complete cleanup even if a second cancellation arrives.
+        blocked = signal.pthread_sigmask(
+            signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT}
+        )
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait(timeout=10)
-        if process.stdout is not None:
-            process.stdout.close()
+            if process is not None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=10)
+                if process.stdout is not None:
+                    process.stdout.close()
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+            signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
 
 
 def validate_manifest(manifest: dict) -> None:
@@ -121,6 +141,7 @@ def missing_scenarios(manifest: dict, listing: str) -> list[str]:
 
 def main() -> int:
     if sys.argv[1:2] == ["--exec"]:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})
         deny_network()
         os.execvp(sys.argv[2], sys.argv[2:])
     target = ROOT / ".verification/fake-session-suite.json"
@@ -148,6 +169,8 @@ def main() -> int:
         },
         "profiles": manifest["profiles"],
         "native_protocol_conformance": "blocked",
+        "descendant_violation_accounting": "blocked",
+        "issue_acceptance": "incomplete",
         "live_acceptance": "not_run",
         "checks": [],
     }

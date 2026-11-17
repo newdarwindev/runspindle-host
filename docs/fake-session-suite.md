@@ -19,6 +19,11 @@ stdout/stderr pipes inherited, and a Linux seccomp filter installed before exec.
 The filter is inherited by child processes and denies socket creation, connection,
 binding, listening and accepting, plus io_uring setup (which could otherwise
 submit network operations). Unexpected use kills the calling process with SIGSYS.
+A parent may ignore an offending descendant’s exit status: the boundary prevents
+network access but does not centrally count every descendant violation. Therefore
+the issue’s “fail on any unexpected outbound call” acceptance criterion remains
+unmet. Reports explicitly mark `descendant_violation_accounting: blocked` and
+`issue_acceptance: incomplete`; a passing test run does not close that gap.
 Local anonymous socketpair IPC remains available for Cargo/compiler job control;
 no preconnected network descriptor is passed. A socket-creation denial canary must
 pass before checks run. Missing libseccomp or an unsupported platform blocks the
