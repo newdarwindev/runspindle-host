@@ -71,6 +71,8 @@ def run(command: list[str], timeout: int) -> tuple[int, bytes]:
     def cancelled(signum: int, _frame: object) -> None:
         raise SystemExit(128 + signum)
 
+    grace = float(os.environ.get("RUNSPINDLE_FAKE_CLEANUP_GRACE", "8"))
+    environment = {**os.environ, "RUNSPINDLE_FAKE_CLEANUP_GRACE": str(grace / 2)}
     previous = signal.signal(signal.SIGTERM, cancelled)
     process = None
     try:
@@ -88,6 +90,7 @@ def run(command: list[str], timeout: int) -> tuple[int, bytes]:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
                 close_fds=True,
+                env=environment,
             )
         finally:
             signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
@@ -102,6 +105,16 @@ def run(command: list[str], timeout: int) -> tuple[int, bytes]:
         )
         try:
             if process is not None:
+                # Give nested owners a chance to cancel their own new-session
+                # groups before forcibly terminating this group.
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=grace)
+                except subprocess.TimeoutExpired:
+                    pass
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
@@ -187,6 +200,7 @@ def main() -> int:
         if code != -signal.SIGSYS:
             raise RuntimeError(f"blocked: deny canary {call}: {code}: {output!r}")
     for check in manifest["checks"]:
+        print(f"running check: {check['id']}", flush=True)
         code, output = run(check["command"], check["timeout_seconds"])
         checks.append(
             {
@@ -211,6 +225,7 @@ def main() -> int:
             if any(s["status"] != "passed" for s in scenarios):
                 checks[-1]["status"] = "failed"
         sys.stdout.buffer.write(output)
+        sys.stdout.buffer.flush()
     evidence["checks"] = checks
     evidence["finished_at_unix"] = int(time.time())
     evidence["network_denial"] = "passed_socket_SIGSYS"

@@ -53,6 +53,13 @@ class FakeSuiteTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
     def test_sigterm_cleans_owned_child_and_descendant(self):
+        self.check_cancellation(nested=False)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
+    def test_sigterm_cleans_nested_owner_session(self):
+        self.check_cancellation(nested=True)
+
+    def check_cancellation(self, nested):
         import os
         import subprocess
         import tempfile
@@ -67,6 +74,11 @@ class FakeSuiteTests(unittest.TestCase):
                 f"os.replace({str(marker) + '.tmp'!r},{str(marker)!r}); "
                 "time.sleep(60)"
             )
+            if nested:
+                child = (
+                    "import sys; sys.path.insert(0,'tools'); import check_fake_sessions as s; "
+                    f"s.run({[sys.executable, '-c', child]!r},120)"
+                )
             owner = subprocess.Popen(
                 [
                     sys.executable,
