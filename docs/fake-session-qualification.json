@@ -1,0 +1,399 @@
+{
+  "schema": "runspindle.host.issue1-qualification.v1",
+  "scope": "bounded synthetic Host #1 suite, not native/live acceptance",
+  "source_commit": "c09be65efd44202e2ffe983d6fb1458646530476",
+  "source_tree": "6bcd5735cce09b343740953e5b1475ed24c81c17",
+  "source_hashes": {
+    "src/lib.rs": "367237dfd95c26960d4c7d2c481e401e514a167ae635a5ee72f0ef8ff3ecfdb7",
+    "src/lifecycle.rs": "9f786847020b8d7cfb4ddd9e927cb42c9612d0de4878c2375886e963b2dff657",
+    "src/native.rs": "a40716ce5e6fa1e3b2f22c1ae29d535b1a78120fbd0a2a1c7a15f6a5a259999a",
+    "src/native_bridge.rs": "a8e85bbad47d5597e06bb6c6bf59d21bd57e66a35e6abcd486ec0a69ebfd6d2c",
+    "src/native_turn.rs": "44e282968c27258c41e01163e2bfffec1e82573674ec974b2314224be123341d",
+    "src/storage.rs": "8677c189ae04c88b0260e184e044d5159a89ac1673d2c4d34ac701a8b51708dc",
+    "tests/durable.rs": "5179001159bd25ef48ba564aa14e607b34d0b22829dbd95eee1686d48b93b7cf",
+    "tests/durable_paths.rs": "1db988a2456ae7e2b108baefa99764b557e87012892881d7c20a6e9ead2fc677",
+    "tests/lifecycle.rs": "e152bd57d891bec6556b073b7cf644659a88a938bbf3fcd934c2c4c97688d189",
+    "tests/native_bridge.rs": "b40aafd557bc7b8e109cea225fc61c708a19d9b60f494cfb42d29d571bf5b5c4",
+    "tests/native_cancel.rs": "861fbf7db2a289e0cb01c7789ed4627bf1d07feefee7200729d835cf35fd0aa0",
+    "tests/native_turn.rs": "be84959ae4127f80610c98751a94c0db330d80c482fbe1864c5264a431c397cd",
+    "tests/test_acceptance_trigger.py": "71a5786cfb5dcbe8e22f02c377dabefbdfb0c79e0024f37e482dd55b0b1aa8a5",
+    "tests/test_failure_diagnostics.py": "59d6ee1d09bd9ff2ffe367e692a453d71c38e68df80ac149bd4fad6f1c6ca38b",
+    "tests/test_fake_session_suite.py": "a286005a73733381ac8234a86f1b159518a8b6fb3ce668a546d6e5e4f7bd7885",
+    "tests/test_hygiene.py": "dc21ab904011c8457e6b7e51061e673a58e07f7802f9ccf8c44c80cfc9b3a875",
+    "tests/test_hygiene_process_lifetime.py": "e65fb9f5c73b5447ff79a3748ce8f772c5b5c5e507efb21941338b7193a7851a",
+    "tests/test_native_mutation_guards.py": "0c78178a9d85eb54bc29cd1ca1b147114b84ccb311e0d8a23d649cbb535b3455",
+    "tests/test_native_pin.py": "a23a546e482210eb3fc83728c10c2db9a705c1d992732405072a020a35dcbacc",
+    "tests/test_network_guard.py": "f7e5ba28ac216f03dbf157ceab9a2963c4b6d574950c78b729680bf7fc634a30",
+    "tests/test_partition_diagnostics.py": "385ea38d647cbc00ffb69b871fab3bcacff0db98dac2c87b701b42062d52c14d",
+    "tests/test_partition_validation.py": "ebe8437ceaae563a88231bc2342c81c2b8f59e7f6c2c4703b98b367f5d1adcda",
+    "tests/test_repo_hygiene.py": "0c9362654e417f232295aa7e4ce7e316b39f85cb050603c1cf6d9c0b77869f06",
+    "tests/test_shared_fixtures.py": "82f6d1608160e9ea95bc0ea9ba4d96cf537eaa66f846e40ef4b0f22fdf3817d3",
+    "tests/test_static_quality.py": "fb00c8bfc138ffdec65e4b039fae9c2c756aee15344c4be913b320f78b5bf3ac",
+    "tools/acceptance_gate.py": "1937759346b5314da4afc48894c70a5f8b819e6696a074fb55fc254b2bfb79a9",
+    "tools/check_durable_mutations.py": "ca908dbcab5acedee24049dee8c4f827c9e1bf8b3d99df5f8e31b384c223c906",
+    "tools/check_durable_path_mutations.py": "969258b7954bba6ab7d974e02ec13167891fe58e1068e43ee535c332d1029a5a",
+    "tools/check_fake_sessions.py": "49c524992fac0b208dc328ab6e82036ce4ed41a7a61e20bb30f615ebddd5c78f",
+    "tools/check_lifecycle.py": "a33270d7ea42da918da0c8ad16f1536f9fb43be0cf684f1643cf7360e7edba2b",
+    "tools/check_lifecycle_mutations.py": "011266a04d02ff26eb7b54efca9afe4ce09295726b89add10edea5967e227578",
+    "tools/check_native_bridge_mutations.py": "d1c8b13c2342a8c7141119787642da8403b72fb5617ae8573e163a21f5dbb6c7",
+    "tools/check_native_cancel_mutations.py": "9cd02f6b6e03735b97d70d262845199a48123c29f494b2c3d2b51c12fb3a8b54",
+    "tools/check_native_mutations.py": "e214fc706a307da37911e20e982967eb4cbdf25442ac8bae583bb5f7622ea48f",
+    "tools/check_native_turn_mutations.py": "0e273d8028cc70e7c07fd6a613b8fff4a04e94ceb0e8d6baa9753e4d32cff2a0",
+    "tools/check_python_tests.py": "aac40d96e22fc1fc09e550ad3eafc667536ff84cb2b7dd7c6e910c6e5c2f82b9",
+    "tools/check_repo_hygiene.py": "254b82e30bd78a6da82694cc13c4f19bcdde3fb5720cb8d5f321a97ce90fa2a9",
+    "tools/check_scaffold.py": "2eef00f05799812e92b0c554f23fc9f457fa09e3b97f31812ab66aa7573509c1",
+    "tools/hygiene.py": "12033cda4366e7fe9e935bc5dab28643d8405dfa57b848b551cd2e4526f708cf",
+    "tools/network_guard.py": "77233c127e03505a2ba322cbea9a3e07e43011d3a6275aea8c0d8b87ccee6918",
+    "tools/partition_validation.py": "47ed0981e70a971ff28dde7077ce0d0c39adb77fb6ad9aa29bc6ed02bdd71ffc",
+    "tools/pin_dependencies.py": "07413c754c63041fd7fffb593d696d35af849c720e513de304de7dcd9befb44d",
+    "tools/quality-baseline.json": "4bc66c88f800d7f09893497a4a0f70e1c35d3902c308eae6221e5bb9a442c3d6",
+    "tools/static_quality.py": "f935576227eb495763c6c8116eb698fe3184e720d21e6bf78f8a9212953e0c9d",
+    "tools/validate.py": "b29f49b6ae71b4427328df21ee855f9ac809ea452af9729a3d1f5ada5695118a"
+  },
+  "dependency_hashes": {
+    "Cargo.lock": "daf4f482906c3a53cfac842fb957908163cd8e92ffa219e7774c70da589230e5",
+    "Cargo.toml": "c1eb9862e5a02ddedc4161dc7e7e6e03521872594e018ac1691c60eea443f969",
+    "requirements-quality.txt": "9cbe1331549216b953f2922f1e8321357ca82bb985e1ea595c87fcee8a8fdc84"
+  },
+  "toolchain": {
+    "python": "3.12.14",
+    "rust": "1.94.1-x86_64-unknown-linux-gnu",
+    "host": "x86_64",
+    "isolation": "inherited Linux seccomp notification denial, synthetic peers only"
+  },
+  "suite_receipt": {
+    "schema": "runspindle.host.fake-suite.v1",
+    "evidence_class": "synthetic",
+    "seed": 0,
+    "started_at_unix": 1794925471,
+    "source_revision": "c09be65efd44202e2ffe983d6fb1458646530476",
+    "working_tree_dirty": false,
+    "manifest_sha256": "21068285779b98adfd2a06f35a2d4b965a3d9687785c1fd4d3df850733c7aca4",
+    "fixture_sha256": {
+      "fixtures/fake-session-suite.json": "21068285779b98adfd2a06f35a2d4b965a3d9687785c1fd4d3df850733c7aca4",
+      "fixtures/shared-v1/artifact.txt": "5d331381d2f6ae517386fdda84eb4f92011915473935b57385c69648cc85bbc8",
+      "fixtures/shared-v1/contract.json": "f707f1d2b7147797042292b6374afd34aecc39c09916ec7a809ae7587ee556a9",
+      "fixtures/shared-v1/fixturekit.py": "1bd6d10ae7105a44a0d583a8974230dde56af603c6ed2b75f67fe3f1fb16319f",
+      "fixtures/shared-v1/golden.json": "ae89dbd0bbaf42a27d435a321778a0605cb6626f1fb7be2e397ae43d88f1589c",
+      "fixtures/shared-v1/manifest.json": "d84b5984981d3a2fa0d4f7b4b966a0b53dbdb418a9ea72caff81101c6c6aeef9",
+      "fixtures/shared-v1/vectors.json": "764ef9bb8f5a0ec0493f8f4d49857980da540ecf81a4714be466cc5296e06b03",
+      "fixtures/shared-v1.pin.json": "b7c71fe90bdf7713dfcca9eaf4fca41a034363a4a3dab2d4aeb6e87428058ef9"
+    },
+    "profiles": [
+      "synthetic-macos",
+      "synthetic-linux"
+    ],
+    "native_protocol_conformance": "blocked",
+    "descendant_violation_accounting": "seccomp_notifications",
+    "issue_acceptance": "incomplete",
+    "live_acceptance": "not_run",
+    "checks": [
+      {
+        "id": "format",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "id": "rust",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "5e1f24d417514ff1f3c301581a29d57cff2c6b0f80901ca887b4d93a812016e2"
+      },
+      {
+        "id": "clippy",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "2b34696728dc82b03cbf6311d7e3a6a41658bbde097834c3010a78bc82842c1a"
+      },
+      {
+        "id": "scaffold",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "51942aba3b6ba802a02a0a1eaec1d5bea9f1e0f5320e0a4363e96f046bb18d9e"
+      },
+      {
+        "id": "python",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "192014106a7408aa8f6d2c9bd630537a511d86cea6b51735df95768c265f0064"
+      },
+      {
+        "id": "lifecycle-mutations",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "9a80fccb84ea17daa61f640de14e4b405a37a081c192d79b871562938ffee4e0"
+      },
+      {
+        "id": "guard-controls",
+        "status": "passed",
+        "returncode": 0,
+        "output_sha256": "1651b1f59d2b4c1660a7364f87bc90d210e59f75d1db6aee4e6b75005e98e566"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "H01",
+        "test": "offline_unknown_stale_future_and_wrong_host_pins_queue_without_failover",
+        "status": "passed"
+      },
+      {
+        "id": "H02",
+        "test": "accepted_lost_reply_reconciles_once_without_second_launch",
+        "status": "passed"
+      },
+      {
+        "id": "H03",
+        "test": "absent_and_ambiguous_discovery_do_not_authorize_retry",
+        "status": "passed"
+      },
+      {
+        "id": "H04",
+        "test": "reconnect_preserves_observed_session_and_every_binding_field",
+        "status": "passed"
+      },
+      {
+        "id": "H05",
+        "test": "cancellation_ack_is_not_terminal_and_completion_race_keeps_actual_outcome",
+        "status": "passed"
+      },
+      {
+        "id": "H06",
+        "test": "cancel_before_start_forbids_launch_and_is_not_native_terminal",
+        "status": "passed"
+      },
+      {
+        "id": "H07",
+        "test": "cancel_lost_reply_does_not_retry_and_unknown_launch_remains_reconcilable",
+        "status": "passed"
+      },
+      {
+        "id": "H08",
+        "test": "queue_backpressure_precedes_effect_and_terminal_is_retryable_after_drain",
+        "status": "passed"
+      },
+      {
+        "id": "H09",
+        "test": "shutdown_forbids_dispatch_and_capabilities_stay_explicit",
+        "status": "passed"
+      },
+      {
+        "id": "H10",
+        "test": "every_lifecycle_receipt_keeps_exact_binding_and_rejects_canary_identity",
+        "status": "passed"
+      },
+      {
+        "id": "H11",
+        "test": "native::tests::native_frames_are_bounded_and_fail_closed",
+        "status": "passed"
+      },
+      {
+        "id": "H12",
+        "test": "native::tests::native_notification_backpressure_keeps_connection_unusable",
+        "status": "passed"
+      },
+      {
+        "id": "H13",
+        "test": "native::tests::native_owned_child_exit_is_observed_and_repeated_close_is_idempotent",
+        "status": "passed"
+      },
+      {
+        "id": "H14",
+        "test": "native_bridge_uncertain_start_never_relaunches_in_fresh_process_twice",
+        "status": "passed"
+      },
+      {
+        "id": "H15",
+        "test": "native_cancel_fresh_process_crash_never_repeats_interrupt",
+        "status": "passed"
+      }
+    ],
+    "finished_at_unix": 1794925573,
+    "network_denial": "passed_socket_notification_accounting",
+    "status": "passed"
+  },
+  "suite_log_sha256": "69084eac39a9e60d90e8bd2c0b9aa6d55a14b316a8ab7e2965dcf900d351e5ab",
+  "summary": {
+    "rust_tests": 98,
+    "rust_compile_fail_doctests": 3,
+    "python_workload_tests": 85,
+    "guard_control_tests": 21,
+    "required_scenarios": 15,
+    "checks": 7,
+    "lifecycle_mutations_detected": 3,
+    "guard_accounting_mutation_detected": true,
+    "prior_cleanup_regression": "two independent no-signal assertions fail against base b938034; pass on candidate"
+  },
+  "boundaries": {
+    "native_protocol_conformance": "blocked",
+    "native_live": "not_run",
+    "production": "not_run",
+    "composition": "not_run",
+    "issue_verdict": "requires_independent_criterion_review_and_merge"
+  },
+  "final_annotation_only_check": {
+    "source_commit": "dde21b38b197122eafc0e90045d73ed7ce6aff0c",
+    "receipt": {
+      "schema": "runspindle.host.fake-suite.v1",
+      "evidence_class": "synthetic",
+      "seed": 0,
+      "started_at_unix": 1794925726,
+      "source_revision": "dde21b38b197122eafc0e90045d73ed7ce6aff0c",
+      "working_tree_dirty": true,
+      "manifest_sha256": "21068285779b98adfd2a06f35a2d4b965a3d9687785c1fd4d3df850733c7aca4",
+      "fixture_sha256": {
+        "fixtures/fake-session-suite.json": "21068285779b98adfd2a06f35a2d4b965a3d9687785c1fd4d3df850733c7aca4",
+        "fixtures/shared-v1/artifact.txt": "5d331381d2f6ae517386fdda84eb4f92011915473935b57385c69648cc85bbc8",
+        "fixtures/shared-v1/contract.json": "f707f1d2b7147797042292b6374afd34aecc39c09916ec7a809ae7587ee556a9",
+        "fixtures/shared-v1/fixturekit.py": "1bd6d10ae7105a44a0d583a8974230dde56af603c6ed2b75f67fe3f1fb16319f",
+        "fixtures/shared-v1/golden.json": "ae89dbd0bbaf42a27d435a321778a0605cb6626f1fb7be2e397ae43d88f1589c",
+        "fixtures/shared-v1/manifest.json": "d84b5984981d3a2fa0d4f7b4b966a0b53dbdb418a9ea72caff81101c6c6aeef9",
+        "fixtures/shared-v1/vectors.json": "764ef9bb8f5a0ec0493f8f4d49857980da540ecf81a4714be466cc5296e06b03",
+        "fixtures/shared-v1.pin.json": "b7c71fe90bdf7713dfcca9eaf4fca41a034363a4a3dab2d4aeb6e87428058ef9"
+      },
+      "profiles": [
+        "synthetic-macos",
+        "synthetic-linux"
+      ],
+      "native_protocol_conformance": "blocked",
+      "descendant_violation_accounting": "seccomp_notifications",
+      "issue_acceptance": "incomplete",
+      "live_acceptance": "not_run",
+      "checks": [
+        {
+          "id": "format",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "id": "rust",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "ef288a9ff71f5f6c264e3d627f120aa2fb7c0c32244fb74e1e677a251aa83f08"
+        },
+        {
+          "id": "clippy",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "a41051563a4cb5fc1b1bcdd9aa0ba28ca80f7736d629d90cc138218756e8e3a9"
+        },
+        {
+          "id": "scaffold",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "51942aba3b6ba802a02a0a1eaec1d5bea9f1e0f5320e0a4363e96f046bb18d9e"
+        },
+        {
+          "id": "python",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "5272082ae97ccc4b54dcf05d0e7f0c31561aae4b1eeeed694041ce68614e885a"
+        },
+        {
+          "id": "lifecycle-mutations",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "9a80fccb84ea17daa61f640de14e4b405a37a081c192d79b871562938ffee4e0"
+        },
+        {
+          "id": "guard-controls",
+          "status": "passed",
+          "returncode": 0,
+          "output_sha256": "a958aa831c5f77a65e3d04f7fec94e4213394413af10e6d76c0a2ef6e54beb51"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "H01",
+          "test": "offline_unknown_stale_future_and_wrong_host_pins_queue_without_failover",
+          "status": "passed"
+        },
+        {
+          "id": "H02",
+          "test": "accepted_lost_reply_reconciles_once_without_second_launch",
+          "status": "passed"
+        },
+        {
+          "id": "H03",
+          "test": "absent_and_ambiguous_discovery_do_not_authorize_retry",
+          "status": "passed"
+        },
+        {
+          "id": "H04",
+          "test": "reconnect_preserves_observed_session_and_every_binding_field",
+          "status": "passed"
+        },
+        {
+          "id": "H05",
+          "test": "cancellation_ack_is_not_terminal_and_completion_race_keeps_actual_outcome",
+          "status": "passed"
+        },
+        {
+          "id": "H06",
+          "test": "cancel_before_start_forbids_launch_and_is_not_native_terminal",
+          "status": "passed"
+        },
+        {
+          "id": "H07",
+          "test": "cancel_lost_reply_does_not_retry_and_unknown_launch_remains_reconcilable",
+          "status": "passed"
+        },
+        {
+          "id": "H08",
+          "test": "queue_backpressure_precedes_effect_and_terminal_is_retryable_after_drain",
+          "status": "passed"
+        },
+        {
+          "id": "H09",
+          "test": "shutdown_forbids_dispatch_and_capabilities_stay_explicit",
+          "status": "passed"
+        },
+        {
+          "id": "H10",
+          "test": "every_lifecycle_receipt_keeps_exact_binding_and_rejects_canary_identity",
+          "status": "passed"
+        },
+        {
+          "id": "H11",
+          "test": "native::tests::native_frames_are_bounded_and_fail_closed",
+          "status": "passed"
+        },
+        {
+          "id": "H12",
+          "test": "native::tests::native_notification_backpressure_keeps_connection_unusable",
+          "status": "passed"
+        },
+        {
+          "id": "H13",
+          "test": "native::tests::native_owned_child_exit_is_observed_and_repeated_close_is_idempotent",
+          "status": "passed"
+        },
+        {
+          "id": "H14",
+          "test": "native_bridge_uncertain_start_never_relaunches_in_fresh_process_twice",
+          "status": "passed"
+        },
+        {
+          "id": "H15",
+          "test": "native_cancel_fresh_process_crash_never_repeats_interrupt",
+          "status": "passed"
+        }
+      ],
+      "finished_at_unix": 1794925854,
+      "network_denial": "passed_socket_notification_accounting",
+      "status": "passed"
+    },
+    "log_sha256": "6a98c426de2e37c02b802aa9b8cde2bb869f76d48c6c2ff4f65c7e3466886503",
+    "working_tree_changes": "only STATUS.json and new criterion/evidence documentation; runtime and tests equal dde21b3",
+    "test_hash": "f84ce435b58e5fa767a5d056e1a61c068e9db75baa0a89aaeda666338bcbfded"
+  },
+  "broader_static": {
+    "status": "failed",
+    "existing_debt": 157,
+    "above_baseline": 41,
+    "same_diagnostic_set_as_unchanged_b938034": true,
+    "base_log_sha256": "3fec9f320257caf3d3b32ca2f1db76c8ec49d43ed9d82c7e89f1f770053dc3af",
+    "candidate_log_sha256": "3fec9f320257caf3d3b32ca2f1db76c8ec49d43ed9d82c7e89f1f770053dc3af"
+  }
+}
