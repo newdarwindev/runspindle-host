@@ -183,6 +183,7 @@ dependencies = [
 name = "runspindle-host"
 version = "0.0.0"
 dependencies = [
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

@@ -7,7 +7,7 @@ use serde::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
-use std::fs::{self, File};
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -24,6 +24,91 @@ pub const MAX_REQUEST: usize = 4096;
 pub const MAX_PENDING: usize = 32;
 pub const BINARY_SHA256: &str = "739cda86e15d30a6e2b40cf8dcbbfb988aaf48b305b27065573bb8e9fd41d002";
 const DEADLINE: Duration = Duration::from_secs(5);
+
+// Resource bound, not a new executable pin or platform qualification.
+#[cfg(unix)]
+const MAX_BINARY_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Copy only a bounded regular file into a fresh caller-owned directory. The
+/// descriptor, not a path precheck, rejects FIFO/device and final-link inputs.
+#[cfg(unix)]
+fn acquire_binary(source: &Path, destination: &Path, expected: &str) -> Result<(), WireError> {
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let mut input = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(source)
+        .map_err(|_| WireError::Io)?;
+    let metadata = input.metadata().map_err(|_| WireError::Io)?;
+    if !metadata.is_file() {
+        return Err(WireError::Pin);
+    }
+    let size = metadata.len();
+    if size == 0 || size > MAX_BINARY_BYTES {
+        return Err(WireError::Oversized);
+    }
+    let mut output = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(destination)
+        .map_err(|_| WireError::Io)?;
+    let result = (|| {
+        copy_exact_binary(&mut input, &mut output, size)?;
+        use std::io::{Seek, SeekFrom};
+        output.seek(SeekFrom::Start(0)).map_err(|_| WireError::Io)?;
+        let mut hash = Sha256::new();
+        let mut buffer = [0u8; 65536];
+        let mut remaining = size;
+        while remaining > 0 {
+            let count = remaining.min(buffer.len() as u64) as usize;
+            output
+                .read_exact(&mut buffer[..count])
+                .map_err(|_| WireError::Io)?;
+            hash.update(&buffer[..count]);
+            remaining -= count as u64;
+        }
+        if format!("{:x}", hash.finalize()) != expected {
+            return Err(WireError::Pin);
+        }
+        output
+            .set_permissions(fs::Permissions::from_mode(0o500))
+            .map_err(|_| WireError::Io)?;
+        Ok(())
+    })();
+    drop(output);
+    if result.is_err() {
+        let _ = fs::remove_file(destination);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn copy_exact_binary(
+    input: &mut impl Read,
+    output: &mut impl Write,
+    size: u64,
+) -> Result<(), WireError> {
+    let mut remaining = size;
+    let mut buffer = [0u8; 65536];
+    while remaining > 0 {
+        let count = remaining.min(buffer.len() as u64) as usize;
+        input
+            .read_exact(&mut buffer[..count])
+            .map_err(|_| WireError::Io)?;
+        output
+            .write_all(&buffer[..count])
+            .map_err(|_| WireError::Io)?;
+        remaining -= count as u64;
+    }
+    let mut extra = [0];
+    if input.read(&mut extra).map_err(|_| WireError::Io)? != 0 {
+        return Err(WireError::Oversized);
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WireError {
@@ -364,26 +449,11 @@ impl StdioSession {
     }
     #[cfg(unix)]
     fn spawn_child(binary: &Path, directory: &Path) -> Result<Child, WireError> {
-        use std::os::unix::fs::PermissionsExt;
         if std::env::consts::OS != "macos" || std::env::consts::ARCH != "aarch64" {
             return Err(WireError::Pin);
         }
         let copy = directory.join("codex");
-        fs::copy(binary, &copy).map_err(|_| WireError::Io)?;
-        let mut file = File::open(&copy).map_err(|_| WireError::Io)?;
-        let mut hash = Sha256::new();
-        let mut buffer = [0u8; 65536];
-        loop {
-            let n = file.read(&mut buffer).map_err(|_| WireError::Io)?;
-            if n == 0 {
-                break;
-            }
-            hash.update(&buffer[..n]);
-        }
-        if format!("{:x}", hash.finalize()) != BINARY_SHA256 {
-            return Err(WireError::Pin);
-        }
-        fs::set_permissions(&copy, fs::Permissions::from_mode(0o500)).map_err(|_| WireError::Io)?;
+        acquire_binary(binary, &copy, BINARY_SHA256)?;
         let home = directory.join("home");
         fs::create_dir(&home).map_err(|_| WireError::Io)?;
         fs::write(
@@ -748,6 +818,89 @@ mod tests {
     use std::io::Cursor;
     use std::sync::atomic::{AtomicU64, Ordering};
     static SERIAL: AtomicU64 = AtomicU64::new(0);
+    #[cfg(unix)]
+    #[test]
+    fn native_binary_acquisition_rejects_special_files_and_preserves_existing_destination() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = std::env::temp_dir().join(format!(
+            "host-acquire-{}-{}",
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&dir).unwrap();
+        let source = dir.join("source");
+        let target = dir.join("target");
+        fs::write(&source, b"fixture executable, never launched").unwrap();
+        let digest = format!("{:x}", Sha256::digest(fs::read(&source).unwrap()));
+        acquire_binary(&source, &target, &digest).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), fs::read(&source).unwrap());
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o500
+        );
+        assert_eq!(
+            acquire_binary(&source, &target, &digest),
+            Err(WireError::Io)
+        );
+        assert_eq!(fs::read(&target).unwrap(), fs::read(&source).unwrap());
+        fs::remove_file(&target).unwrap();
+        assert_eq!(
+            acquire_binary(&source, &target, "wrong pin"),
+            Err(WireError::Pin)
+        );
+        assert!(!target.exists());
+        let link = dir.join("link");
+        symlink(&source, &link).unwrap();
+        assert_eq!(acquire_binary(&link, &target, &digest), Err(WireError::Io));
+        assert_eq!(acquire_binary(&dir, &target, &digest), Err(WireError::Pin));
+        let fifo = dir.join("fifo");
+        assert!(Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success());
+        let start = Instant::now();
+        assert_eq!(acquire_binary(&fifo, &target, &digest), Err(WireError::Pin));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(!target.exists());
+        let large = fs::File::create(dir.join("large")).unwrap();
+        large.set_len(MAX_BINARY_BYTES + 1).unwrap();
+        assert_eq!(
+            acquire_binary(&dir.join("large"), &target, &digest),
+            Err(WireError::Oversized)
+        );
+        fs::write(&source, b"").unwrap();
+        assert_eq!(
+            acquire_binary(&source, &target, &digest),
+            Err(WireError::Oversized)
+        );
+        assert!(!target.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_binary_copy_is_exact_and_growth_is_bounded() {
+        let mut output = Vec::new();
+        assert_eq!(
+            copy_exact_binary(&mut Cursor::new(b"ab"), &mut output, 3),
+            Err(WireError::Io)
+        );
+        output.clear();
+        assert_eq!(
+            copy_exact_binary(&mut std::io::repeat(42), &mut output, 17),
+            Err(WireError::Oversized)
+        );
+        assert_eq!(output, vec![42; 17]);
+        output.clear();
+        copy_exact_binary(&mut Cursor::new(b"abc"), &mut output, 3).unwrap();
+        assert_eq!(output, b"abc");
+        assert_eq!(
+            copy_exact_binary(&mut Cursor::new(b"abc"), &mut std::io::sink(), 2),
+            Err(WireError::Oversized)
+        );
+    }
+
     fn scripted(behavior: &str) -> (StdioSession, PathBuf) {
         let directory = std::env::temp_dir().join(format!(
             "runspindle-wire-{}-{}",

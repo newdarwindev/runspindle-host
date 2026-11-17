@@ -13,6 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
+        "native_binary_digest": (
+            'if format!("{:x}", hash.finalize()) != expected {',
+            'if false && format!("{:x}", hash.finalize()) != expected {',
+        ),
+        "native_binary_growth": (
+            "if input.read(&mut extra).map_err(|_| WireError::Io)? != 0 {",
+            "if false && input.read(&mut extra).map_err(|_| WireError::Io)? != 0 {",
+        ),
         "native_observed_poison": (
             "if self.reader_failed.load(Ordering::Acquire) {",
             "if false && self.reader_failed.load(Ordering::Acquire) {",
@@ -22,8 +30,8 @@ def main() -> None:
             "let result = if false && result.is_err() {",
         ),
         "native_ambiguous_reply": (
-            "if result.is_some() == error.is_some() || frame.get(\"params\").is_some() {",
-            "if false && (result.is_some() == error.is_some() || frame.get(\"params\").is_some()) {",
+            'if result.is_some() == error.is_some() || frame.get("params").is_some() {',
+            'if false && (result.is_some() == error.is_some() || frame.get("params").is_some()) {',
         ),
         "native_scalar_interrupt_ack": (
             "if !reply.is_object() {",
