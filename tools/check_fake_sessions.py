@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -25,7 +26,14 @@ def run(command: list[str], timeout: int, *, guard: bool = True) -> tuple[int, b
         raise SystemExit(128 + signum)
 
     grace = float(os.environ.get("RUNSPINDLE_FAKE_CLEANUP_GRACE", "8"))
-    environment = {**os.environ, "RUNSPINDLE_FAKE_CLEANUP_GRACE": str(grace / 2)}
+    scratch = tempfile.TemporaryDirectory(prefix="runspindle-fake-check-")
+    environment = {
+        **os.environ,
+        "RUNSPINDLE_FAKE_CLEANUP_GRACE": str(grace / 2),
+        "TMPDIR": scratch.name,
+        "TEMP": scratch.name,
+        "TMP": scratch.name,
+    }
     previous = signal.signal(signal.SIGTERM, cancelled)
     process = None
     try:
@@ -65,21 +73,24 @@ def run(command: list[str], timeout: int, *, guard: bool = True) -> tuple[int, b
             if process is not None:
                 # Give nested owners a chance to cancel their own new-session
                 # groups before forcibly terminating this group.
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.wait(timeout=grace)
-                except subprocess.TimeoutExpired:
-                    pass
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait(timeout=10)
+                # An unreaped leader pins its process-group identity. Never
+                # signal its numeric PGID after communicate/wait has reaped it.
+                if process.returncode is None:
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        process.wait(timeout=grace)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        process.wait(timeout=10)
                 if process.stdout is not None:
                     process.stdout.close()
+            scratch.cleanup()
         finally:
             signal.signal(signal.SIGTERM, previous)
             signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
