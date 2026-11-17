@@ -35,6 +35,30 @@ The [source asset guide](https://github.com/newdarwindev/runspindle_for_bloomber
 identifies fictional/synthetic material; the linked galleries do not prove a deployed
 integration, measured savings or Bloomberg endorsement.
 
+## Three moments when session identity matters
+
+**RESUME ON THE SAME MACHINE.** A coding job is accepted on a selected workstation,
+then its connection disappears. HOST's [durable mapping](specs/durable-lifecycle.md)
+retains the binding and reconciles a lost reply against the existing session. An
+available alternate machine is not an automatic substitute. This is locally tested
+with scripted peers; the [selected-workstation slide](https://newdarwindev.github.io/runspindle_for_bloomberg/assets/Runspindle_Gallery_Index.html#page-12)
+is a conceptual illustration of that promise.
+
+**STOP THE WORK, NOT JUST THE STATUS MESSAGE.** Cancellation preserves the difference
+between requesting an interrupt, receiving an acknowledgement and observing a terminal
+state. The [lifecycle contract](specs/lifecycle.md) and
+[observed-child cleanup](specs/observed-child-shutdown.md) describe distinct boundaries.
+*Actual native/provider cancellation still needs qualified observation; a local child
+exit cannot prove that a remote action was reversed.*
+
+**OBSERVE THE SELECTED SESSION.** The owner should see the same workspace and session
+that the job uses, rather than a newly opened look-alike. HOST contributes exact
+[native identity mappings](specs/native-bridge.md); the
+[operator-observations concept](https://newdarwindev.github.io/runspindle_for_bloomberg/assets/Runspindle_Gallery_Index.html#page-16)
+shows the intended experience. *The live desktop viewer and human takeover belong to
+qualified CONSOLE/BROWSER integration; viewing must not silently grant input authority
+or replace the selected session.*
+
 ### Follow the implementation
 
 - [Lifecycle contract](specs/lifecycle.md) and [durable mapping](specs/durable-lifecycle.md).
