@@ -14,25 +14,37 @@ not assert that either operating system has passed native qualification.
 
 ## Isolation and failure behavior
 
-Each owned check starts in its own process group with stdin disconnected, only
-stdout/stderr pipes inherited, and a Linux seccomp filter installed before exec.
-The filter is inherited by child processes and denies socket creation, connection,
-binding, listening and accepting, plus io_uring setup (which could otherwise
-submit network operations). Unexpected use kills the calling process with SIGSYS.
-A parent may ignore an offending descendant’s exit status: the boundary prevents
-network access but does not centrally count every descendant violation. Therefore
-the issue’s “fail on any unexpected outbound call” acceptance criterion remains
-unmet. Reports explicitly mark `descendant_violation_accounting: blocked` and
-`issue_acceptance: incomplete`; a passing test run does not close that gap.
-Local anonymous socketpair IPC remains available for Cargo/compiler job control;
-no preconnected network descriptor is passed. A socket-creation denial canary must
-pass before checks run. Missing libseccomp or an unsupported platform blocks the
-suite; there is no unconfined fallback. This is a boundary for these trusted tests,
-not a general-purpose hostile-code sandbox.
+Each workload check starts in its own process group with stdin disconnected and
+no preconnected network descriptor. A disposable Linux supervisor installs an
+inherited seccomp user-notification filter before exec. Socket creation,
+connection, binding, listening, accepting and io_uring setup are intercepted.
+The supervisor records each attempt and always responds EPERM; it never continues
+a syscall. A caught exception or a parent swallowing a descendant failure cannot
+turn a violation into a passing check. The guard returns 125 for violations or
+notification errors. The supervisor is a process-local child subreaper and waits
+for all descendants, including orphaned or detached children, before reporting.
 
-Every check has a bounded timeout. On completion, failure or interruption, its
-process group is killed and reaped so owned helpers cannot linger. A timeout is a
-failed check. No global network, service or security setting is changed.
+Local anonymous socketpair IPC remains available for compiler job control and
+the guard's descriptor handshake. Notification descriptors stay in the supervisor,
+not the workload. A denial canary must pass first. Missing Linux/libseccomp API 6+
+notification support blocks execution, without an unconfined workload fallback.
+This is an accidental-network-use boundary for trusted tests, not a hostile-code
+sandbox: malicious code installing replacement filters is outside its contract.
+
+The guard-control tests are part of the trusted supervisor/control plane. They
+run separately from the guarded Python workload partition because Linux rejects
+stacked notification listeners. They launch only synthetic fixtures through the
+guard and assert denial, swallowed-failure detection and process cleanup. The
+suite accepts exactly the checked-in control driver command for this exception;
+all other workload checks are guarded. Nested lifecycle-owner cleanup uses the
+already inherited filter rather than stacking another listener.
+
+Every check has a bounded timeout. On cancellation, TERM propagates to nested
+owners before a bounded KILL fallback. The supervisor separately identifies its
+own descendants, verifies ancestry after opening stable pidfds, kills/reaps them
+(including detached sessions), and never targets unrelated processes. This needs
+Linux pidfd support and readable /proc process metadata. No global network,
+service or security setting is changed.
 
 ## Versioned scenarios and evidence
 

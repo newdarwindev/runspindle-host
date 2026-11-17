@@ -114,11 +114,7 @@
       "id": "python",
       "command": [
         "python3",
-        "-m",
-        "unittest",
-        "discover",
-        "-s",
-        "tests"
+        "tools/check_python_tests.py"
       ],
       "timeout_seconds": 300
     },
@@ -129,6 +125,15 @@
         "tools/check_lifecycle_mutations.py"
       ],
       "timeout_seconds": 300
+    },
+    {
+      "id": "guard-controls",
+      "command": [
+        "python3",
+        "tools/check_python_tests.py",
+        "--guard-controls"
+      ],
+      "timeout_seconds": 60
     }
   ]
 }
