@@ -7,7 +7,6 @@ network settings, starts a real native session, or relaxes an operational gate.
 
 from __future__ import annotations
 
-import ctypes
 import hashlib
 import json
 import os
@@ -19,55 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "fixtures/fake-session-suite.json"
-NETWORK_CALLS = (
-    "socket",
-    "connect",
-    "bind",
-    "listen",
-    "accept",
-    "accept4",
-    "io_uring_setup",
-)
 
 
-def deny_network() -> None:
-    if sys.platform != "linux":
-        raise RuntimeError("blocked: Linux libseccomp required")
-    library = ctypes.CDLL("libseccomp.so.2", use_errno=True)
-    library.seccomp_init.argtypes = [ctypes.c_uint32]
-    library.seccomp_init.restype = ctypes.c_void_p
-    library.seccomp_syscall_resolve_name.argtypes = [ctypes.c_char_p]
-    library.seccomp_syscall_resolve_name.restype = ctypes.c_int
-    library.seccomp_rule_add.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_uint32,
-        ctypes.c_int,
-        ctypes.c_uint,
-    ]
-    library.seccomp_rule_add.restype = ctypes.c_int
-    library.seccomp_load.argtypes = [ctypes.c_void_p]
-    library.seccomp_load.restype = ctypes.c_int
-    library.seccomp_release.argtypes = [ctypes.c_void_p]
-    context = library.seccomp_init(0x7FFF0000)  # SCMP_ACT_ALLOW
-    if not context:
-        raise RuntimeError("blocked: seccomp_init")
-    try:
-        for name in NETWORK_CALLS:
-            number = library.seccomp_syscall_resolve_name(name.encode("ascii"))
-            if (
-                number < 0
-                or library.seccomp_rule_add(context, 0x80000000, number, 0) != 0
-            ):
-                raise RuntimeError(f"blocked: syscall rule {name}")
-        # KILL_PROCESS prevents the caller from catching network failure. A
-        # parent can still ignore a descendant termination; see evidence gap.
-        if library.seccomp_load(context) != 0:
-            raise RuntimeError("blocked: seccomp_load")
-    finally:
-        library.seccomp_release(context)
-
-
-def run(command: list[str], timeout: int) -> tuple[int, bytes]:
+def run(command: list[str], timeout: int, *, guard: bool = True) -> tuple[int, bytes]:
     def cancelled(signum: int, _frame: object) -> None:
         raise SystemExit(128 + signum)
 
@@ -83,7 +36,12 @@ def run(command: list[str], timeout: int) -> tuple[int, bytes]:
         )
         try:
             process = subprocess.Popen(
-                [sys.executable, str(Path(__file__).resolve()), "--exec", *command],
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "--exec" if guard else "--exec-inherited",
+                    *command,
+                ],
                 cwd=ROOT,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -153,10 +111,14 @@ def missing_scenarios(manifest: dict, listing: str) -> list[str]:
 
 
 def main() -> int:
-    if sys.argv[1:2] == ["--exec"]:
+    if sys.argv[1:2] in (["--exec"], ["--exec-inherited"]):
         signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})
-        deny_network()
-        os.execvp(sys.argv[2], sys.argv[2:])
+        if sys.argv[1] == "--exec-inherited":
+            os.execvp(sys.argv[2], sys.argv[2:])
+        os.execv(
+            sys.executable,
+            [sys.executable, str(ROOT / "tools/network_guard.py"), *sys.argv[2:]],
+        )
     target = ROOT / ".verification/fake-session-suite.json"
     target.unlink(missing_ok=True)
     manifest = json.loads(MANIFEST.read_text())
@@ -182,7 +144,7 @@ def main() -> int:
         },
         "profiles": manifest["profiles"],
         "native_protocol_conformance": "blocked",
-        "descendant_violation_accounting": "blocked",
+        "descendant_violation_accounting": "seccomp_notifications",
         "issue_acceptance": "incomplete",
         "live_acceptance": "not_run",
         "checks": [],
@@ -197,11 +159,20 @@ def main() -> int:
         raise RuntimeError(f"blocked: scenario inventory ({code}, missing={missing})")
     for call in ["socket.socket()"]:
         code, output = run([sys.executable, "-c", f"import socket; {call}"], 10)
-        if code != -signal.SIGSYS:
+        if code != 125 or b"network guard: denied=1 errors=[]" not in output:
             raise RuntimeError(f"blocked: deny canary {call}: {code}: {output!r}")
     for check in manifest["checks"]:
         print(f"running check: {check['id']}", flush=True)
-        code, output = run(check["command"], check["timeout_seconds"])
+        control = check["id"] == "guard-controls"
+        if control and check["command"] != [
+            "python3",
+            "tools/check_python_tests.py",
+            "--guard-controls",
+        ]:
+            raise RuntimeError("blocked: unexpected control-plane command")
+        code, output = run(
+            check["command"], check["timeout_seconds"], guard=not control
+        )
         checks.append(
             {
                 "id": check["id"],
@@ -228,7 +199,7 @@ def main() -> int:
         sys.stdout.buffer.flush()
     evidence["checks"] = checks
     evidence["finished_at_unix"] = int(time.time())
-    evidence["network_denial"] = "passed_socket_SIGSYS"
+    evidence["network_denial"] = "passed_socket_notification_accounting"
     evidence["status"] = (
         "passed" if all(c["status"] == "passed" for c in checks) else "failed"
     )
