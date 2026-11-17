@@ -19,17 +19,18 @@ BUNDLE = ROOT / 'fixtures/shared-v1'
 PIN = {'component': 'host',
  'fixture_schema': 'runspindle.fixture.v1',
  'repository': 'newdarwindev/runspindle',
- 'rights_basis': 'Owner-directed reuse of original Runspindle synthetic fixtures; source bytes '
-                 'and notices retained; no blanket relicense.',
+ 'rights_basis': 'Owner-directed reuse of original Runspindle synthetic '
+                 'fixtures; source bytes and notices retained; no blanket '
+                 'relicense.',
  'schema': 'runspindle.fixture.pin.v1',
- 'scope': 'synthetic-fixture-consumer-only; not a runtime wire protocol or upstream '
-          'qualification',
- 'source_bundle_tree': '68172a671e28175af88638c6d8f1c54e1c675f37',
- 'source_commit': 'e8cd5779968fede213443db13a591c992cd0e183',
- 'source_manifest_sha256': '1dd35d045064056dd66e6da3619ff100549e1c3e81c928f076cfd4109a524d81',
- 'source_validator_blob': '0c5189a527bcd85b4c491a869a2d0218db50dc25',
- 'subset_manifest_sha256': 'd84b5984981d3a2fa0d4f7b4b966a0b53dbdb418a9ea72caff81101c6c6aeef9',
- 'validator_sha256': '1bd6d10ae7105a44a0d583a8974230dde56af603c6ed2b75f67fe3f1fb16319f'}
+ 'scope': 'synthetic-fixture-consumer-only; not a runtime wire protocol or '
+          'upstream qualification',
+ 'source_bundle_tree': '3be3d0b80358f4801dfa20e55d32b49f50e9c6ea',
+ 'source_commit': 'e283957d80aebc48fb0bd3b6e2a600850ff6dc97',
+ 'source_manifest_sha256': '11ba400c1e9a82566496678104200538f7d2f9b3394d73e65b6ad75c83c2d1ed',
+ 'source_validator_blob': '623b1bae0c85b14563e2738259038bf53c021bae',
+ 'subset_manifest_sha256': '4dc397a4378c78df40ce72c7ca3a7a6e3ade2b9726a5789778a5186e0e5610b1',
+ 'validator_sha256': '29857e337c30f84e673387a2ac27c7f0fc95bada1d783b346085286251f65279'}
 EXPECTED_IDENTITY = {'attempt': 1,
  'event_id': 'synthetic-event-id',
  'host_id': 'synthetic-host-id',
@@ -95,7 +96,7 @@ class ConsumerFixtures(unittest.TestCase):
         self.assertEqual(str(error.exception),code)
 
     def test_fixed_pin_and_golden_identity(self):
-        self.assertEqual(PIN['source_commit'],'e8cd5779968fede213443db13a591c992cd0e183')
+        self.assertEqual(PIN['source_commit'],'e283957d80aebc48fb0bd3b6e2a600850ff6dc97')
         self.assertEqual(PIN['fixture_schema'],'runspindle.fixture.v1')
         self.assertTrue(self.kit.assert_conforms(self.envelope(),EXPECTED_IDENTITY,EXPECTED_STATE))
 
