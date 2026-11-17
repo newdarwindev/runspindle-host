@@ -645,3 +645,54 @@ fn cancel_peer_panic_retains_requested_state_without_resending() {
     assert_eq!(a.cancel(&b, &mut peer).unwrap(), pending);
     assert_eq!(peer.calls, 1);
 }
+
+#[test]
+fn every_lifecycle_receipt_keeps_exact_binding_and_rejects_canary_identity() {
+    // Exercise the complete public receipt, not just the final state. Neither a
+    // rejected peer identity nor an unrelated binding may contaminate the log.
+    for platform in ["macos", "linux"] {
+        assert_eq!(
+            Capabilities::scripted(platform).unwrap().lifecycle,
+            Support::Supported
+        );
+        let b = binding();
+        let mut a = adapter();
+        let mut peer = accepted();
+        peer.cancels.push_back(CancelReply::Acknowledged);
+        a.submit(
+            request(&b),
+            &presence(Reachability::Offline),
+            110,
+            &mut peer,
+        )
+        .unwrap();
+        assert!(peer.calls.is_empty());
+        a.dispatch(&b, &presence(Reachability::Online), 110, &mut peer)
+            .unwrap();
+        let before = a.snapshot(&b).unwrap();
+        let mut malicious = event(&b, 2, None);
+        malicious.observation.native_session_id = "secret-canary/invalid".into();
+        assert_eq!(a.event(&b, malicious, 110), Err(Error::WrongBinding));
+        assert_eq!(a.snapshot(&b).unwrap(), before);
+        a.cancel(&b, &mut peer).unwrap();
+        a.event(&b, event(&b, 2, Some(Terminal::Completed)), 110)
+            .unwrap();
+        let receipts = a.drain();
+        assert!(receipts.len() >= 4);
+        for receipt in receipts {
+            assert_eq!(receipt.version, VERSION);
+            assert_eq!(receipt.snapshot.binding, b);
+            assert!(receipt
+                .snapshot
+                .native_session_id
+                .as_deref()
+                .is_none_or(|s| s == "observed-native-session"));
+            let serialized = serde_json::to_string(&receipt).unwrap();
+            assert!(!serialized.contains("secret-canary"));
+            let decoded: Receipt = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(decoded, receipt);
+        }
+        assert!(a.drain().is_empty());
+        assert_eq!(peer.calls.len(), 2);
+    }
+}
