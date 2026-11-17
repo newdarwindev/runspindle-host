@@ -39,6 +39,13 @@ suite accepts exactly the checked-in control driver command for this exception;
 all other workload checks are guarded. Nested lifecycle-owner cleanup uses the
 already inherited filter rather than stacking another listener.
 
+Every check has a bounded timeout. Each owns a disposable temporary root exposed
+through TMPDIR/TEMP/TMP. After its supervised descendants exit, that root is
+removed on success, failure, timeout and cancellation; nested checks inherit
+the outer root. A completed/reaped leader is never signalled by numeric process
+group ID, so cleanup cannot target a later reused identity. Stable pidfds are
+used for test-only fallback cleanup.
+
 Every check has a bounded timeout. On cancellation, TERM propagates to nested
 owners before a bounded KILL fallback. The supervisor separately identifies its
 own descendants, verifies ancestry after opening stable pidfds, kills/reaps them
