@@ -40,5 +40,11 @@
     "specification": "specs/observed-child-shutdown.md",
     "rust_tests": "not_run",
     "native_task_completion": "unsupported"
+  },
+  "fake_session_suite": {
+    "state": "passed_bounded_offline_suite",
+    "evidence": "docs/fake-session-qualification.json",
+    "criteria": "docs/issue1-acceptance.md",
+    "native_live": "not_run"
   }
 }

@@ -6,6 +6,7 @@ import signal
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location(
     "fake_suite", Path(__file__).resolve().parents[1] / "tools/check_fake_sessions.py"
@@ -35,6 +36,50 @@ class FakeSuiteTests(unittest.TestCase):
             suite.missing_scenarios(manifest, "not_required: test"), ["required"]
         )
         self.assertEqual(suite.missing_scenarios(manifest, "required: test"), [])
+
+    def test_reaped_child_is_never_signalled(self) -> None:
+        process = mock.Mock(returncode=0, stdout=mock.Mock())
+        process.communicate.return_value = (b"done", None)
+        with (
+            mock.patch.object(suite.subprocess, "Popen", return_value=process),
+            mock.patch.object(suite.os, "killpg") as signal_group,
+        ):
+            self.assertEqual(suite.run(["synthetic"], 1), (0, b"done"))
+        signal_group.assert_not_called()
+        process.wait.assert_not_called()
+
+    def test_completed_wait_prevents_later_group_signal(self) -> None:
+        process = mock.Mock(returncode=None, pid=1234, stdout=mock.Mock())
+        process.communicate.side_effect = suite.subprocess.TimeoutExpired(
+            "synthetic", 1
+        )
+
+        def reap(**_kwargs: object) -> None:
+            process.returncode = 0
+
+        process.wait.side_effect = reap
+        with (
+            mock.patch.object(suite.subprocess, "Popen", return_value=process),
+            mock.patch.object(suite.os, "killpg") as signal_group,
+        ):
+            self.assertEqual(suite.run(["synthetic"], 1)[0], 124)
+        signal_group.assert_called_once_with(1234, signal.SIGTERM)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
+    def test_success_and_failure_remove_owned_temporary_state(self) -> None:
+        for status in (0, 3):
+            code, output = suite.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import tempfile,pathlib,sys; "
+                    "p=pathlib.Path(tempfile.mkdtemp()); (p/'retained').write_text('fixture'); "
+                    f"print(str(p),flush=True); sys.exit({status})",
+                ],
+                10,
+            )
+            self.assertEqual(code, status)
+            self.assertFalse(Path(output.decode().strip()).exists())
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
     def test_network_default_denied(self):
@@ -71,8 +116,11 @@ class FakeSuiteTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / "pids.json"
+            temp_marker = Path(directory) / "temp-path"
             child = (
-                "import subprocess,sys,os,json,time; "
+                "import subprocess,sys,os,json,time,tempfile,pathlib; "
+                "scratch=pathlib.Path(tempfile.mkdtemp()); (scratch/'retained').write_text('fixture'); "
+                f"pathlib.Path({str(temp_marker)!r}).write_text(str(scratch)); "
                 f"p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],start_new_session={detached}); "
                 f"open({str(marker) + '.tmp'!r},'w').write(json.dumps([os.getpid(),p.pid])); "
                 f"os.replace({str(marker) + '.tmp'!r},{str(marker)!r}); "
@@ -95,15 +143,18 @@ class FakeSuiteTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
             pids = []
+            handles = []
             try:
                 deadline = time.monotonic() + 10
                 while not marker.exists() and time.monotonic() < deadline:
                     time.sleep(0.02)
                 self.assertTrue(marker.exists(), "owned child did not start")
                 pids = json.loads(marker.read_text())
+                handles = [os.pidfd_open(pid) for pid in pids]
                 owner.terminate()
                 _, owner_error = owner.communicate(timeout=10)
                 self.assertNotEqual(owner.returncode, 0)
+                self.assertFalse(Path(temp_marker.read_text()).exists())
                 for pid in pids:
                     deadline = time.monotonic() + 5
                     while time.monotonic() < deadline:
@@ -119,8 +170,10 @@ class FakeSuiteTests(unittest.TestCase):
                 if owner.poll() is None:
                     owner.kill()
                 owner.communicate(timeout=10)
-                for pid in pids:
+                for handle in handles:
                     try:
-                        os.kill(pid, signal.SIGKILL)
+                        signal.pidfd_send_signal(handle, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
+                    finally:
+                        os.close(handle)
