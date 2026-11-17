@@ -81,3 +81,14 @@ class NetworkGuardTests(unittest.TestCase):
             # The actual invariant (denial must force 125) fails under mutation;
             # a setup/runtime error cannot masquerade as successful detection.
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cleanup_never_signals_reaped_numeric_pid(self):
+        script = (
+            f"import sys;sys.path.insert(0,{str(GUARD.parent)!r});import network_guard as guard;"
+            "guard.os.kill=lambda *args: (_ for _ in ()).throw(AssertionError('numeric PID signal'));"
+            "sys.exit(guard.supervise([sys.executable,'-c','pass']))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, timeout=10
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)

@@ -279,11 +279,6 @@ def supervise(command: list[str]) -> int:
         parent.close()
         if listener >= 0:
             os.close(listener)
-        try:
-            os.kill(pid, signal.SIGKILL)
-            os.waitpid(pid, 0)
-        except (ProcessLookupError, ChildProcessError):
-            pass
 
 
 if __name__ == "__main__":
