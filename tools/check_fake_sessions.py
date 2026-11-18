@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "fixtures/fake-session-suite.json"
@@ -96,7 +97,7 @@ def run(command: list[str], timeout: int, *, guard: bool = True) -> tuple[int, b
             signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
 
 
-def validate_manifest(manifest: dict) -> None:
+def validate_manifest(manifest: dict[str, Any]) -> None:
     if manifest.get("schema") != "runspindle.host.fake-suite.v1":
         raise ValueError("unsupported manifest schema")
     if not manifest.get("scenarios") or not manifest.get("checks"):
@@ -112,7 +113,7 @@ def validate_manifest(manifest: dict) -> None:
         raise ValueError("required rust check missing")
 
 
-def missing_scenarios(manifest: dict, listing: str) -> list[str]:
+def missing_scenarios(manifest: dict[str, Any], listing: str) -> list[str]:
     names = {
         line.removesuffix(": test")
         for line in listing.splitlines()

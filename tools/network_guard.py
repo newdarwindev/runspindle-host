@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import FrameType
 
 NETWORK_CALLS = (
     "socket",
@@ -58,7 +59,7 @@ class Response(ctypes.Structure):
     ]
 
 
-def library():
+def library() -> ctypes.CDLL:
     lib = ctypes.CDLL("libseccomp.so.2", use_errno=True)
     # Initializes feature discovery in the supervisor as well as the child.
     if lib.seccomp_api_get() < 6:
@@ -80,7 +81,7 @@ def library():
     return lib
 
 
-def install(lib) -> int:
+def install(lib: ctypes.CDLL) -> int:
     context = lib.seccomp_init(0x7FFF0000)
     if not context:
         raise RuntimeError("blocked: seccomp_init")
@@ -190,7 +191,7 @@ def supervise(command: list[str]) -> int:
             os._exit(126)
     child.close()
 
-    def cancelled(signum, _frame):
+    def cancelled(signum: int, _frame: FrameType | None) -> None:
         raise SystemExit(128 + signum)
 
     signal.signal(signal.SIGTERM, cancelled)

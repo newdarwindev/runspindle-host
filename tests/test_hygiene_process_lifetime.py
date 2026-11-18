@@ -259,7 +259,7 @@ class OwnershipTests(unittest.TestCase):
 
     def test_continuous_output_does_not_starve_timeout_or_drain_deadline(self) -> None:
         self.exit_code = None
-        self.reads = [b"x" * 8192] * 100
+        self.reads = [b"x" * 8192 for _ in range(100)]
         receipt = self.run_entry()
         self.assertEqual(receipt["reason"], "timeout")
         self.assertEqual(receipt["cleanup"], "unknown")
@@ -268,7 +268,8 @@ class OwnershipTests(unittest.TestCase):
         self.assertLessEqual(self.now, 2.2)
 
     def test_synthetic_output_tail_is_bounded(self) -> None:
-        self.reads = [b"x" * 8192] * 10 + [b"FINAL_MARKER", b""]
+        self.reads = [b"x" * 8192 for _ in range(10)]
+        self.reads.extend([b"FINAL_MARKER", b""])
         receipt, output = hygiene.collect_process(self.process, 0.1)
         self.assertEqual(receipt["status"], "passed")
         self.assertTrue(receipt["output_complete"])
@@ -296,7 +297,6 @@ class OwnershipTests(unittest.TestCase):
         self.process.returncode = 0
         self.assertEqual(hygiene.stop_owned_process(self.process), {})
         self.assertEqual(self.events, [])
-
 
 
 if __name__ == "__main__":

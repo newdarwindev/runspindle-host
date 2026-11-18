@@ -11,7 +11,7 @@ GUARD = Path(__file__).resolve().parents[1] / "tools/network_guard.py"
 
 @unittest.skipUnless(sys.platform == "linux", "Linux seccomp notification lane")
 class NetworkGuardTests(unittest.TestCase):
-    def guard(self, script):
+    def guard(self, script: str) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [sys.executable, str(GUARD), sys.executable, "-c", script],
             stdout=subprocess.PIPE,
@@ -19,49 +19,49 @@ class NetworkGuardTests(unittest.TestCase):
             timeout=10,
         )
 
-    def test_offline_passes(self):
+    def test_offline_passes(self) -> None:
         result = self.guard("print('offline')")
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_original_failure_preserved(self):
+    def test_original_failure_preserved(self) -> None:
         self.assertEqual(self.guard("raise SystemExit(7)").returncode, 7)
 
-    def test_caught_permission_error_still_fails(self):
+    def test_caught_permission_error_still_fails(self) -> None:
         result = self.guard(
             "import socket\ntry: socket.socket()\nexcept PermissionError: pass"
         )
         self.assertEqual(result.returncode, 125, result.stderr)
         self.assertIn(b"denied=1 errors=[]", result.stderr)
 
-    def test_parent_ignoring_descendant_failure_still_fails(self):
+    def test_parent_ignoring_descendant_failure_still_fails(self) -> None:
         result = self.guard(
             "import subprocess,sys; subprocess.run([sys.executable,'-c','import socket;socket.socket()']);sys.exit(0)"
         )
         self.assertEqual(result.returncode, 125, result.stderr)
         self.assertIn(b"denied=1 errors=[]", result.stderr)
 
-    def test_late_orphan_descendant_still_fails(self):
+    def test_late_orphan_descendant_still_fails(self) -> None:
         result = self.guard(
             "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time,socket;time.sleep(.1);socket.socket()']);sys.exit(0)"
         )
         self.assertEqual(result.returncode, 125, result.stderr)
         self.assertIn(b"denied=1 errors=[]", result.stderr)
 
-    def test_detached_descendant_still_fails(self):
+    def test_detached_descendant_still_fails(self) -> None:
         result = self.guard(
             "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time,socket;time.sleep(.1);socket.socket()'],start_new_session=True);sys.exit(0)"
         )
         self.assertEqual(result.returncode, 125, result.stderr)
         self.assertIn(b"denied=1 errors=[]", result.stderr)
 
-    def test_multiple_attempts_counted(self):
+    def test_multiple_attempts_counted(self) -> None:
         result = self.guard(
             "import socket\nfor i in range(3):\n try: socket.socket()\n except PermissionError: pass"
         )
         self.assertEqual(result.returncode, 125, result.stderr)
         self.assertIn(b"denied=3 errors=[]", result.stderr)
 
-    def test_missing_accounting_mutation_is_detected(self):
+    def test_missing_accounting_mutation_is_detected(self) -> None:
         script = "import socket\ntry: socket.socket()\nexcept PermissionError: pass"
         self.assertEqual(self.guard(script).returncode, 125)
         with tempfile.TemporaryDirectory(prefix="host-guard-mutation-") as directory:
@@ -82,7 +82,7 @@ class NetworkGuardTests(unittest.TestCase):
             # a setup/runtime error cannot masquerade as successful detection.
             self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_cleanup_never_signals_reaped_numeric_pid(self):
+    def test_cleanup_never_signals_reaped_numeric_pid(self) -> None:
         script = (
             f"import sys;sys.path.insert(0,{str(GUARD.parent)!r});import network_guard as guard;"
             "guard.os.kill=lambda *args: (_ for _ in ()).throw(AssertionError('numeric PID signal'));"
