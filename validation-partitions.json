@@ -23,7 +23,8 @@
     "rust": [
       "rust-format",
       "rust-test",
-      "rust-clippy"
+      "rust-clippy",
+      "otel-tests"
     ],
     "mutation_1": [
       "lifecycle-mutations"

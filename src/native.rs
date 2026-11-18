@@ -425,8 +425,28 @@ pub struct StdioSession {
     directory: PathBuf,
     io_threads: Vec<std::thread::JoinHandle<()>>,
     shutdown_receipt: Option<ShutdownReceipt>,
+    telemetry: Option<Arc<crate::telemetry::Buffer>>,
 }
 impl StdioSession {
+    /// Opt-in local metadata buffer; never grants authority or installs an exporter.
+    pub fn set_telemetry(&mut self, buffer: Option<Arc<crate::telemetry::Buffer>>) {
+        self.telemetry = buffer;
+    }
+    fn observe(
+        &self,
+        operation: crate::telemetry::Operation,
+        outcome: crate::telemetry::Outcome,
+        started: std::time::SystemTime,
+    ) {
+        if let Some(buffer) = &self.telemetry {
+            buffer.record(crate::telemetry::Observation {
+                operation,
+                outcome,
+                started,
+                ended: std::time::SystemTime::now(),
+            });
+        }
+    }
     /// The caller provides a fresh private directory, never a real Codex home/workspace.
     /// Copy and hash the executable before executing the exact copied bytes. The only
     /// accepted binary digest is the reviewed local-platform pin in the repository.
@@ -505,6 +525,7 @@ impl StdioSession {
             directory,
             io_threads: Vec::new(),
             shutdown_receipt: None,
+            telemetry: None,
         };
         let result = (|| {
             // Validate both pipe handles before starting either worker.
@@ -570,7 +591,17 @@ impl StdioSession {
             .map_err(|_| WireError::Timeout)?
     }
     fn rpc(&mut self, method: &str, params: Value) -> Result<Value, WireError> {
+        let started = std::time::SystemTime::now();
         let result = self.rpc_inner(method, params);
+        self.observe(
+            crate::telemetry::Operation::rpc(method),
+            if result.is_ok() {
+                crate::telemetry::Outcome::Acknowledged
+            } else {
+                crate::telemetry::Outcome::Error
+            },
+            started,
+        );
         if result.is_err() {
             self.close();
         }
@@ -768,6 +799,7 @@ impl StdioSession {
         if let Some(receipt) = self.shutdown_receipt {
             return receipt;
         }
+        let started = std::time::SystemTime::now();
         let deadline = Instant::now() + DEADLINE;
         let mut receipt = ShutdownReceipt {
             process_id: self.child.id(),
@@ -795,6 +827,15 @@ impl StdioSession {
             }
         }
         self.shutdown_receipt = Some(receipt);
+        self.observe(
+            crate::telemetry::Operation::Shutdown,
+            if cleanup_permitted(receipt) {
+                crate::telemetry::Outcome::Observed
+            } else {
+                crate::telemetry::Outcome::Unknown
+            },
+            started,
+        );
         receipt
     }
 
@@ -818,6 +859,45 @@ mod tests {
     use std::io::Cursor;
     use std::sync::atomic::{AtomicU64, Ordering};
     static SERIAL: AtomicU64 = AtomicU64::new(0);
+    #[test]
+    fn telemetry_observes_scripted_rpc_without_retaining_payloads() {
+        use crate::telemetry::{Buffer, Operation, Outcome};
+        let (mut peer, _) = scripted("  print(json.dumps({'id':r['id'],'result':{'thread':{'id':'PRIVATE_ID_CANARY'}}}),flush=True)");
+        let buffer = Arc::new(Buffer::default());
+        peer.set_telemetry(Some(buffer.clone()));
+        peer.initialize().unwrap();
+        assert_eq!(peer.start_empty_thread().unwrap(), "PRIVATE_ID_CANARY");
+        let receipt = peer.close_observed();
+        assert!(cleanup_permitted(receipt));
+        peer.close_observed(); // Retained shutdown does not invent another stop event.
+        let records = buffer.drain();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].operation, Operation::Handshake);
+        assert_eq!(records[1].outcome, Outcome::Acknowledged);
+        assert_eq!(records[2].operation, Operation::Shutdown);
+        assert_eq!(records[2].outcome, Outcome::Observed);
+        assert!(!format!("{records:?}").contains("PRIVATE_ID_CANARY"));
+    }
+
+    #[test]
+    fn telemetry_full_buffer_does_not_change_native_outcome() {
+        use crate::telemetry::{Buffer, Observation, Operation, Outcome, CAPACITY};
+        let (mut peer, _) = scripted("  pass");
+        let buffer = Arc::new(Buffer::default());
+        for _ in 0..CAPACITY {
+            buffer.record(Observation {
+                operation: Operation::OtherRpc,
+                outcome: Outcome::Error,
+                started: std::time::SystemTime::now(),
+                ended: std::time::SystemTime::now(),
+            });
+        }
+        peer.set_telemetry(Some(buffer.clone()));
+        peer.initialize().unwrap();
+        assert!(cleanup_permitted(peer.close_observed()));
+        assert_eq!(buffer.dropped(), 2);
+    }
+
     #[cfg(unix)]
     #[test]
     fn native_binary_acquisition_rejects_special_files_and_preserves_existing_destination() {

@@ -155,6 +155,22 @@
         "tools/check_durable_path_mutations.py"
       ],
       "timeout_seconds": 600
+    },
+    {
+      "id": "otel-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "otel",
+        "telemetry"
+      ],
+      "required_files": [
+        "src/telemetry.rs"
+      ],
+      "timeout_seconds": 600
     }
   ],
   "lockfiles": [
