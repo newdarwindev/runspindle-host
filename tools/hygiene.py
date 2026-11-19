@@ -849,7 +849,9 @@ def failure_summary(result: dict[str, Any]) -> list[str]:
                 f"reported_test={case}"
                 for case in cases[:8]
                 if isinstance(case, str)
-                and re.fullmatch(r"test_[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.test_[A-Za-z0-9_]+", case)
+                and re.fullmatch(
+                    r"test_[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.test_[A-Za-z0-9_]+", case
+                )
             )
         lines.append("hygiene failure: " + " ".join(fields))
     return lines[:32]

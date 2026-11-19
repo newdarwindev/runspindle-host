@@ -218,10 +218,22 @@ def supervise(command: list[str]) -> int:
 
         def receive() -> None:
             try:
+                events = select.poll()
+                events.register(listener, select.POLLIN)
                 while not stopped.is_set():
-                    readable, _, _ = select.select([listener], [], [], 0.05)
-                    if not readable:
+                    ready = events.poll(50)
+                    if not ready:
                         continue
+                    _, flags = ready[0]
+                    if flags & (select.POLLERR | select.POLLNVAL):
+                        errors.append("notification listener error")
+                        return
+                    if flags & select.POLLHUP:
+                        # The last filter user exited. A hangup is readable to
+                        # select(), but receiving a notification can block.
+                        if flags & select.POLLIN:
+                            errors.append("notification canceled before receipt")
+                        return
                     request = Request()
                     result = lib.seccomp_notify_receive(listener, ctypes.byref(request))
                     if result == -errno.ECANCELED:
