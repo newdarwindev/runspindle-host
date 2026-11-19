@@ -119,6 +119,26 @@ class HygieneTests(unittest.TestCase):
         self.assertEqual(receipt["exit_code"], 3)
         self.assertNotIn("PRIVATE_CANARY", json.dumps(receipt))
 
+    def test_failed_unittest_reports_only_case_identifier(self) -> None:
+        entry = {
+            "id": "python-tests",
+            "command": [
+                "python3",
+                "-c",
+                "print('FAIL: test_contract (test_host.Contract.test_contract)');"
+                "print('PRIVATE_CANARY'); raise SystemExit(1)",
+                "unittest",
+            ],
+        }
+        receipt = hygiene.run_entry(self.root, entry)
+        self.assertEqual(
+            receipt["reported_test_cases"], ["test_host.Contract.test_contract"]
+        )
+        rendered = hygiene.failure_summary({"checks": [receipt]})
+        self.assertIn("reported_test=test_host.Contract.test_contract", rendered[0])
+        self.assertNotIn("PRIVATE_CANARY", json.dumps(receipt))
+        self.assertNotIn("PRIVATE_CANARY", rendered[0])
+
     def test_timeout_fails(self) -> None:
         receipt = hygiene.run_entry(
             self.root,

@@ -484,6 +484,15 @@ def run_entry(root: Path, entry: dict[str, Any]) -> dict[str, Any]:
         if "unittest" in entry["command"]:
             counts = re.findall(r"(?m)^Ran (\d+) tests? in [0-9.]+s$", output)
             summaries = re.findall(r"(?m)^(?:OK|FAILED)(?: \(([^\n]*)\))?$", output)
+            if receipt["status"] == "failed":
+                cases = re.findall(
+                    r"(?m)^(?:FAIL|ERROR): (test_[A-Za-z0-9_]+) "
+                    r"\((test_[A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\.test_[A-Za-z0-9_]+)?\)$",
+                    output,
+                )
+                receipt["reported_test_cases"] = [
+                    f"{owner}.{method}" for method, owner in cases[:8]
+                ]
             if counts and summaries:
                 receipt["tests_run"] = int(counts[-1])
                 skipped = re.search(r"(?:^|, )skipped=(\d+)(?:,|$)", summaries[-1])
@@ -834,6 +843,16 @@ def failure_summary(result: dict[str, Any]) -> list[str]:
         if isinstance(version, str) and re.fullmatch(r"\d+(?:\.\d+){1,3}", version):
             fields.append(f"required_version={version}")
         fields.append(diagnostic_summary(entry))
+        cases = entry.get("reported_test_cases")
+        if isinstance(cases, list):
+            fields.extend(
+                f"reported_test={case}"
+                for case in cases[:8]
+                if isinstance(case, str)
+                and re.fullmatch(
+                    r"test_[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.test_[A-Za-z0-9_]+", case
+                )
+            )
         lines.append("hygiene failure: " + " ".join(fields))
     return lines[:32]
 

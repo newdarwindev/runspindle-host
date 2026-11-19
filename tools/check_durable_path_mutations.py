@@ -63,7 +63,9 @@ def main() -> None:
             ):
                 raise AssertionError(run.stdout)
             rows.append({"mutation": name, "behavioral_failure_observed": True})
-    print(json.dumps({"evidence_class": "synthetic_component_mutation", "results": rows}))
+    print(
+        json.dumps({"evidence_class": "synthetic_component_mutation", "results": rows})
+    )
 
 
 if __name__ == "__main__":

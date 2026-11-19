@@ -17,20 +17,20 @@ SPEC.loader.exec_module(suite)
 
 
 class FakeSuiteTests(unittest.TestCase):
-    def test_manifest_valid(self):
+    def test_manifest_valid(self) -> None:
         suite.validate_manifest(json.loads(suite.MANIFEST.read_text()))
 
-    def test_empty_manifest_rejected(self):
+    def test_empty_manifest_rejected(self) -> None:
         with self.assertRaises(ValueError):
             suite.validate_manifest({"schema": "runspindle.host.fake-suite.v1"})
 
-    def test_duplicate_ids_rejected(self):
+    def test_duplicate_ids_rejected(self) -> None:
         manifest = json.loads(suite.MANIFEST.read_text())
         manifest["scenarios"].append(manifest["scenarios"][0])
         with self.assertRaises(ValueError):
             suite.validate_manifest(manifest)
 
-    def test_inventory_exact_not_suffix_match(self):
+    def test_inventory_exact_not_suffix_match(self) -> None:
         manifest = {"scenarios": [{"test": "required"}]}
         self.assertEqual(
             suite.missing_scenarios(manifest, "not_required: test"), ["required"]
@@ -82,14 +82,14 @@ class FakeSuiteTests(unittest.TestCase):
             self.assertFalse(Path(output.decode().strip()).exists())
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
-    def test_network_default_denied(self):
+    def test_network_default_denied(self) -> None:
         code, _ = suite.run(
             [sys.executable, "-c", "import socket; socket.socket()"], 10
         )
         self.assertEqual(code, 125)
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
-    def test_timeout_is_failure(self):
+    def test_timeout_is_failure(self) -> None:
         code, output = suite.run(
             [sys.executable, "-c", "import time; time.sleep(30)"], 1
         )
@@ -97,18 +97,18 @@ class FakeSuiteTests(unittest.TestCase):
         self.assertIn(b"timed out", output)
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
-    def test_sigterm_cleans_owned_child_and_descendant(self):
+    def test_sigterm_cleans_owned_child_and_descendant(self) -> None:
         self.check_cancellation(nested=False)
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
-    def test_sigterm_cleans_nested_owner_session(self):
+    def test_sigterm_cleans_nested_owner_session(self) -> None:
         self.check_cancellation(nested=True)
 
     @unittest.skipUnless(sys.platform == "linux", "Linux confinement")
-    def test_sigterm_cleans_detached_descendant(self):
+    def test_sigterm_cleans_detached_descendant(self) -> None:
         self.check_cancellation(nested=False, detached=True)
 
-    def check_cancellation(self, nested, detached=False):
+    def check_cancellation(self, nested: bool, detached: bool = False) -> None:
         import os
         import subprocess
         import tempfile
