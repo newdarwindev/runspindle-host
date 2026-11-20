@@ -53,6 +53,10 @@ def main() -> None:
             'if frame["method"] == "thread/started" {',
             'if false && frame["method"] == "thread/started" {',
         ),
+        "native_contradictory_read_identity": (
+            "                    notice(frame, thread)?;",
+            "                    let _ = notice(frame, thread);",
+        ),
         "native_unbounded_frame": (
             "if bytes.len() > MAX_FRAME {",
             "if false && bytes.len() > MAX_FRAME {",
