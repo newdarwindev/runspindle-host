@@ -159,6 +159,34 @@ fn prepare(p: &Path) {
     assert!(matches!(b.launch(&binding()), LaunchReply::Accepted(_)));
 }
 #[test]
+fn native_turn_revoked_during_acknowledgement_retains_identity_without_disclosing_it() {
+    struct GrantUntilSend<'a>(&'a Path);
+    impl native_turn::Verifier for GrantUntilSend<'_> {
+        fn verify_turn(&self, r: &Request) -> bool {
+            r == &request() && count(self.0) == 0
+        }
+    }
+
+    let t = Temp::new();
+    prepare(&t.0);
+    let mut b = bridge(&t.0, false, false);
+    let input = Input::good();
+    let result = b.submit_turn(&request(), &GrantUntilSend(&t.0), &input);
+    assert_eq!(count(&t.0), 1);
+    assert_eq!(result, Err(Error::Denied));
+    drop(b);
+
+    let mut reopened = bridge(&t.0, false, false);
+    assert_eq!(
+        reopened.submit_turn(&request(), &Exact, &input),
+        Ok(Outcome::Acknowledged {
+            turn_id: "turn-native".into()
+        })
+    );
+    assert_eq!(count(&t.0), 1);
+    assert_eq!(input.opens.load(Ordering::SeqCst), 1);
+}
+#[test]
 fn native_turn_exact_authority_digest_and_profile_precede_effects() {
     let t = Temp::new();
     prepare(&t.0);

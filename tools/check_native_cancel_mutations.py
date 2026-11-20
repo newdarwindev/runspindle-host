@@ -29,6 +29,10 @@ def main() -> None:
             "saved.acknowledged = true;",
             "saved.acknowledged = true; state.terminal = Some(Terminal::Cancelled);",
         ),
+        "native_cancel_acknowledgement_authority": (
+            "if !verifier.verify_cancel(request) {\n            return Err(Error::Denied);\n        }\n        Ok(CancelOutcome::Acknowledged)",
+            "Ok(CancelOutcome::Acknowledged)",
+        ),
     }
     rows = []
     for name, (old, new) in mutations.items():

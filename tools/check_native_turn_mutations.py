@@ -29,6 +29,10 @@ def main() -> None:
             "if let Some(saved) = &state.task_turn {",
             "if let Some(saved) = None::<&crate::native_turn::Reservation> {",
         ),
+        "native_turn_acknowledgement_authority": (
+            "if !verifier.verify_turn(request) {\n            return Err(Error::Denied);\n        }\n        Ok(Outcome::Acknowledged { turn_id })",
+            "Ok(Outcome::Acknowledged { turn_id })",
+        ),
     }
     rows = []
     for name, (old, new) in mutations.items():
