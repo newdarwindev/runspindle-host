@@ -59,6 +59,30 @@ journal reader; it reports only ID length and equality. It never prints IDs,
 content or process logs.
 
 
+## Task turn identity during submission
+
+The separately authorized task-turn path validates the returned turn ID against
+the supported thread, turn and item notices buffered while waiting for the
+`turn/start` reply. These notices must identify the selected thread, and any
+turn-bearing notice must identify the returned turn. Contradiction or malformed
+identity closes the transport. Matching notices and already queued notices
+remain available in their original order. The transport records a rejected
+exchange as a telemetry error. The response and notification shapes come from
+the pinned schemas. [Start response](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server-protocol/schema/json/v2/TurnStartResponse.json)
+[Started notification](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server-protocol/schema/json/v2/TurnStartedNotification.json)
+
+The durable bridge retains the existing claim without a turn ID after rejection.
+A reopened bridge returns unknown without another submission. A scripted
+subprocess test checks the RPC order and a separate SQLite read verifies the
+retained claim. The notification check only covers frames consumed before the
+reply. Observable terminal state and actual pinned-peer recovery require
+separate qualification.
+
+```sh
+cargo test --offline --locked --lib native_turn_start
+python3 tools/check_native_mutations.py
+```
+
 ## Reply and notification validation
 
 The wire-validation follow-up to #8 extends this same transport, without adding

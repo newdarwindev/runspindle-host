@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
+        "native_turn_start_conflicting_notice": (
+            "if observed.turn_id.as_deref().is_some_and(|seen| seen != turn) {",
+            "if false && observed.turn_id.as_deref().is_some_and(|seen| seen != turn) {",
+        ),
         "native_binary_digest": (
             'if format!("{:x}", hash.finalize()) != expected {',
             'if false && format!("{:x}", hash.finalize()) != expected {',

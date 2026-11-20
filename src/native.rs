@@ -591,8 +591,18 @@ impl StdioSession {
             .map_err(|_| WireError::Timeout)?
     }
     fn rpc(&mut self, method: &str, params: Value) -> Result<Value, WireError> {
+        self.rpc_checked(method, params, |_, reply| Ok(reply))
+    }
+    fn rpc_checked<T>(
+        &mut self,
+        method: &str,
+        params: Value,
+        accept: impl FnOnce(&Self, Value) -> Result<T, WireError>,
+    ) -> Result<T, WireError> {
         let started = std::time::SystemTime::now();
-        let result = self.rpc_inner(method, params);
+        let result = self
+            .rpc_inner(method, params)
+            .and_then(|reply| accept(self, reply));
         self.observe(
             crate::telemetry::Operation::rpc(method),
             if result.is_ok() {
@@ -706,7 +716,8 @@ impl StdioSession {
         }
         id(&json!(thread))?;
         id(&json!(model))?;
-        let reply = self.rpc(
+        let pending_before = self.notifications.len();
+        self.rpc_checked(
             "turn/start",
             json!({
                 "threadId":thread,
@@ -715,12 +726,31 @@ impl StdioSession {
                 "approvalPolicy":"never",
                 "sandboxPolicy":{"type":"readOnly","networkAccess":false}
             }),
-        )?;
-        let result = id(&reply["turn"]["id"]);
-        if result.is_err() {
-            self.close();
-        }
-        result
+            |session, reply| {
+                let turn = id(&reply["turn"]["id"])?;
+                // The selected session owns one task turn. Validate supported
+                // lifecycle notices buffered during this exchange without
+                // draining them or rebinding from an older queued notice.
+                for frame in session.notifications.iter().skip(pending_before) {
+                    if matches!(
+                        frame["method"].as_str(),
+                        Some(
+                            "thread/started"
+                                | "turn/started"
+                                | "turn/completed"
+                                | "item/started"
+                                | "item/completed"
+                        )
+                    ) {
+                        let observed = notice(frame, thread)?.into_ids();
+                        if observed.turn_id.as_deref().is_some_and(|seen| seen != turn) {
+                            return Err(WireError::Unexpected);
+                        }
+                    }
+                }
+                Ok(turn)
+            },
+        )
     }
     pub fn read_thread(&mut self, thread: &str) -> Result<NativeIds, WireError> {
         if !self.initialized {
@@ -1669,5 +1699,204 @@ for line in sys.stdin:
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn native_turn_start_rejects_conflicting_exchange_notices_without_retry() {
+        use crate::telemetry::{Buffer, Operation, Outcome};
+        for (message, expected) in [
+            (
+                json!({"method":"turn/started","params":{"threadId":"thread-native","turn":{"id":"other-turn","status":"inProgress"}}}),
+                WireError::Unexpected,
+            ),
+            (
+                json!({"method":"turn/completed","params":{"threadId":"other-thread","turn":{"id":"turn-native","status":"completed"}}}),
+                WireError::Unexpected,
+            ),
+            (
+                json!({"method":"item/started","params":{"threadId":"thread-native","turnId":"other-turn","item":{"id":"item-native"}}}),
+                WireError::Unexpected,
+            ),
+            (
+                json!({"method":"item/completed","params":{"threadId":"thread-native","turnId":true,"item":{"id":"item-native"}}}),
+                WireError::Malformed,
+            ),
+        ] {
+            let (mut peer, ledger) = scripted(&format!(
+                "  print(r'''{message}''',flush=True)\n  print(json.dumps({{'id':r['id'],'result':{{'turn':{{'id':'turn-native'}}}}}}),flush=True)"
+            ));
+            let telemetry = Arc::new(Buffer::default());
+            peer.set_telemetry(Some(telemetry.clone()));
+            peer.initialize().unwrap();
+            assert_eq!(
+                peer.start_text_turn("thread-native", "synthetic", "synthetic-model"),
+                Err(expected)
+            );
+            assert_eq!(
+                peer.start_text_turn("thread-native", "synthetic", "synthetic-model"),
+                Err(WireError::Closed)
+            );
+            assert_eq!(peer.read_thread("thread-native"), Err(WireError::Closed));
+            assert_eq!(
+                fs::read_to_string(ledger).unwrap(),
+                "initialize\ninitialized\nturn/start\n"
+            );
+            let outcomes: Vec<_> = telemetry
+                .drain()
+                .into_iter()
+                .filter(|item| item.operation == Operation::TurnStart)
+                .map(|item| item.outcome)
+                .collect();
+            assert_eq!(outcomes, [Outcome::Error, Outcome::Error]);
+        }
+    }
+
+    #[test]
+    fn native_turn_start_keeps_matching_and_older_notices_in_order() {
+        let (mut peer, ledger) = scripted(
+            "  if r['method']=='fixture/prime':
+   print(json.dumps({'method':'turn/started','params':{'threadId':'thread-native','turn':{'id':'older-turn','status':'inProgress'}}}),flush=True)
+   print(json.dumps({'id':r['id'],'result':{}}),flush=True)
+  else:
+   print(json.dumps({'method':'turn/started','params':{'threadId':'thread-native','turn':{'id':'turn-native','status':'inProgress'}}}),flush=True)
+   print(json.dumps({'method':'item/started','params':{'threadId':'thread-native','turnId':'turn-native','item':{'id':'item-native'}}}),flush=True)
+   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread-native','turn':{'id':'turn-native','status':'completed'}}}),flush=True)
+   print(json.dumps({'id':r['id'],'result':{'turn':{'id':'turn-native'}}}),flush=True)",
+        );
+        peer.initialize().unwrap();
+        peer.rpc("fixture/prime", json!({})).unwrap();
+        assert_eq!(
+            peer.start_text_turn("thread-native", "synthetic", "synthetic-model"),
+            Ok("turn-native".into())
+        );
+        for (turn, item) in [
+            ("older-turn", None),
+            ("turn-native", None),
+            ("turn-native", Some("item-native")),
+            ("turn-native", None),
+        ] {
+            let observed = peer.take_notification("thread-native").unwrap().unwrap();
+            assert_eq!(observed.turn_id.as_deref(), Some(turn));
+            assert_eq!(observed.item_id.as_deref(), item);
+        }
+        assert!(peer.take_notification("thread-native").is_none());
+        assert_eq!(
+            fs::read_to_string(ledger).unwrap(),
+            "initialize\ninitialized\nfixture/prime\nturn/start\n"
+        );
+    }
+
+    #[test]
+    fn native_turn_start_conflict_remains_unknown_after_bridge_reopen() {
+        use crate::{
+            lifecycle::{Action, Binding, LaunchReply, Peer, Verifier},
+            native_bridge::{LocalPin, NativeBridge},
+            native_turn::{self, InputRef, InputResolver, Outcome, Profile, Request},
+        };
+        use rusqlite::{Connection, OpenFlags};
+
+        struct Exact(Request);
+        impl Verifier for Exact {
+            fn verify(&self, binding: &Binding, action: Action) -> bool {
+                binding == &self.0.binding && action == Action::TakeOwnership
+            }
+        }
+        impl native_turn::Verifier for Exact {
+            fn verify_turn(&self, request: &Request) -> bool {
+                request == &self.0
+            }
+        }
+        const INPUT: &[u8] = b"synthetic private input canary";
+        struct Input;
+        impl InputResolver for Input {
+            fn open(&self, _: &InputRef) -> std::io::Result<Box<dyn Read>> {
+                Ok(Box::new(Cursor::new(INPUT)))
+            }
+        }
+
+        let exact = Exact(Request {
+            version: native_turn::VERSION.into(),
+            binding: Binding {
+                task_id: "task".into(),
+                revision: 1,
+                operation_id: "operation".into(),
+                policy_revision: "policy".into(),
+                host_id: "host".into(),
+                workspace_id: "workspace".into(),
+                lease_epoch: 1,
+            },
+            thread_id: "thread-native".into(),
+            input: InputRef {
+                sha256: format!("{:x}", Sha256::digest(INPUT)),
+                byte_length: INPUT.len() as u64,
+            },
+            profile: Profile {
+                kind: "read_only_text_v1".into(),
+                model: "synthetic-model".into(),
+            },
+        });
+        let (mut first, first_ledger) = scripted(
+            "  if r['method']=='thread/start':
+   print(json.dumps({'id':r['id'],'result':{'thread':{'id':'thread-native'}}}),flush=True)
+  else:
+   assert r['method']=='turn/start'
+   print(json.dumps({'method':'turn/started','params':{'threadId':'thread-native','turn':{'id':'contradiction','status':'inProgress'}}}),flush=True)
+   print(json.dumps({'id':r['id'],'result':{'turn':{'id':'turn-native'}}}),flush=True)",
+        );
+        let (second, second_ledger) =
+            scripted("  raise RuntimeError('unexpected native operation')");
+        let path = second_ledger.with_file_name("host.sqlite");
+        first.initialize().unwrap();
+        let open = |peer| {
+            NativeBridge::open(
+                &path,
+                LocalPin::new("host", "workspace").unwrap(),
+                exact.0.binding.clone(),
+                &exact,
+                || Ok(peer),
+                || 120,
+            )
+            .unwrap()
+        };
+        let mut bridge = open(first);
+        assert!(matches!(
+            bridge.launch(&exact.0.binding),
+            LaunchReply::Accepted(_)
+        ));
+        assert_eq!(
+            bridge.submit_turn(&exact.0, &exact, &Input),
+            Ok(Outcome::Unknown)
+        );
+        assert_eq!(
+            fs::read_to_string(first_ledger).unwrap(),
+            "initialize\ninitialized\nthread/start\nturn/start\n"
+        );
+        drop(bridge);
+
+        let mut reopened = open(second);
+        assert_eq!(
+            reopened.submit_turn(&exact.0, &exact, &Input),
+            Ok(Outcome::Unknown)
+        );
+        assert_eq!(reopened.turn_outcome(), Ok(None));
+        assert!(
+            !second_ledger.exists(),
+            "reopened bridge called native peer"
+        );
+        let db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let stored: Vec<u8> = db
+            .query_row("SELECT state FROM host_native_state", [], |row| row.get(0))
+            .unwrap();
+        assert!(!stored.windows(INPUT.len()).any(|window| window == INPUT));
+        let state = serde_json::from_slice::<Value>(&stored).unwrap();
+        assert_eq!(state["thread"], "thread-native");
+        assert_eq!(
+            state["task_turn"]["request"]["binding"]["operation_id"],
+            "operation"
+        );
+        assert!(state["task_turn"]["turn_id"].is_null());
+        drop(db);
+        drop(reopened);
+        assert!(!path.exists());
     }
 }
