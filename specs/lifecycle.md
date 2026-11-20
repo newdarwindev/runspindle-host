@@ -34,8 +34,11 @@ if a peer panics; a scheduled/unknown operation cannot launch again. A lost repl
 requires discovery. Zero or multiple discoveries produce unknown and never
 permission to retry. Exactly one complete matching observation may bind. No
 `proven_absent` retry is implemented in this conservative subset. Reconnect cannot
-change the observed session or any binding field. Future/stale observations and
-non-increasing sequences reject. `max_age_ms` is explicit trusted configuration;
+change the observed session or any binding field. A single mismatched, stale or
+otherwise refused discovery produces an unknown snapshot and receipt, retaining
+the last accepted session, sequence, timestamp and cancel reservation. Only a
+valid newer observation can resolve that uncertainty. Future/stale observations
+and non-increasing sequences reject. `max_age_ms` is explicit trusted configuration;
 `now` is an injected trusted monotonic clock value, never peer time. Offline,
 unknown, mismatched, future, expired or stale presence queues the selected pin.
 Reconciling a queued operation returns its existing snapshot without calling

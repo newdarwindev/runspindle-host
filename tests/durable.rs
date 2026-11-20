@@ -63,6 +63,7 @@ struct Ledger {
     db: Connection,
     crash: bool,
     cancel_crash: bool,
+    discovery_override: Option<Observation>,
 }
 impl Ledger {
     fn open(p: &Path) -> Self {
@@ -73,6 +74,7 @@ impl Ledger {
             db,
             crash: false,
             cancel_crash: false,
+            discovery_override: None,
         }
     }
     fn call(&self, a: &str) {
@@ -103,7 +105,7 @@ impl Peer for Ledger {
             .unwrap()
             == 1
         {
-            vec![observation()]
+            vec![self.discovery_override.clone().unwrap_or_else(observation)]
         } else {
             vec![]
         }
@@ -147,6 +149,31 @@ fn child() {
     }
     if mode == "reconcile" {
         a.reconcile(&binding(), 120, &mut peer).unwrap();
+        return;
+    }
+    if matches!(
+        mode.as_str(),
+        "reconcile_foreign" | "reconcile_stale" | "reconcile_fresh"
+    ) {
+        let mut reply = observation();
+        reply.sequence = 2;
+        let expected = match mode.as_str() {
+            "reconcile_foreign" => {
+                reply.native_session_id = "foreign-session".into();
+                reply.terminal = Some(Terminal::Completed);
+                Err(Error::WrongBinding)
+            }
+            "reconcile_stale" => {
+                reply.observed_at_ms = 1;
+                Err(Error::Stale)
+            }
+            _ => Ok(Execution::Acknowledged),
+        };
+        peer.discovery_override = Some(reply);
+        assert_eq!(
+            a.reconcile(&binding(), 120, &mut peer).map(|s| s.execution),
+            expected
+        );
         return;
     }
     let result = a.submit(
@@ -203,6 +230,59 @@ fn queued_operation_remains_dispatchable_after_fresh_process_reconcile() {
         })
         .unwrap();
     assert_eq!(calls, "launch,discover");
+}
+
+#[test]
+fn invalid_discovery_persists_uncertainty_without_rebinding_or_relaunch() {
+    for mode in ["reconcile_foreign", "reconcile_stale"] {
+        let t = Temporary::new();
+        let host = t.0.join("host.sqlite");
+        let mut peer = Ledger::open(&t.0.join("peer.sqlite"));
+        assert!(run_child(&t.0, "submit").wait().unwrap().success());
+        assert!(run_child(&t.0, "reconcile").wait().unwrap().success());
+        let acknowledged = adapter(&host).snapshot(&binding()).unwrap();
+        assert_eq!(acknowledged.execution, Execution::Acknowledged);
+
+        assert!(run_child(&t.0, mode).wait().unwrap().success());
+        let mut reopened = adapter(&host);
+        let mut unknown = acknowledged.clone();
+        unknown.execution = Execution::Unknown;
+        assert_eq!(reopened.snapshot(&binding()).unwrap(), unknown, "{mode}");
+        assert_eq!(
+            reopened.try_drain().unwrap().last().unwrap().snapshot,
+            unknown
+        );
+        assert_eq!(
+            reopened
+                .dispatch(&binding(), &presence(), 120, &mut peer)
+                .unwrap(),
+            unknown
+        );
+
+        assert!(run_child(&t.0, "reconcile_fresh").wait().unwrap().success());
+        let recovered = adapter(&host).snapshot(&binding()).unwrap();
+        assert_eq!(recovered.execution, Execution::Acknowledged);
+        assert_eq!(recovered.native_session_id, acknowledged.native_session_id);
+        assert_eq!(recovered.last_sequence, 2);
+        let effects: Vec<String> = peer
+            .db
+            .prepare("SELECT session FROM effects")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(effects, ["peer-observed-session"]);
+        let calls: Vec<String> = peer
+            .db
+            .prepare("SELECT action FROM calls ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(calls, ["launch", "discover", "discover", "discover"]);
+    }
 }
 
 #[test]
