@@ -38,8 +38,8 @@ def main() -> None:
             "if false && !reply.is_object() {",
         ),
         "native_unknown_cleanup": (
-            "if cleanup_permitted(receipt) {",
-            "if true {",
+            "if cleanup_permitted(receipt) {\n            let _ = fs::remove_dir_all",
+            "if true {\n            let _ = fs::remove_dir_all",
         ),
         "native_duplicate_json_members": (
             "if values.contains_key(&key) {",

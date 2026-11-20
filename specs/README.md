@@ -48,3 +48,11 @@ records and conservative uncertain recovery; task execution remains unsupported.
 
 [Owned-child shutdown observations](observed-child-shutdown.md) are an uncompiled
 source candidate. Existing native evidence does not qualify this revision.
+
+## Operational telemetry candidate
+
+[Telemetry v1](../contracts/telemetry-v1.md) adds opt-in, bounded native RPC and
+owned-child cleanup observations with optional upstream OpenTelemetry conversion.
+The default session installs no recorder or exporter. Scripted-peer and actual
+in-memory SDK tests are separate from live Codex or Collector qualification;
+cross-component propagation and live export remain unimplemented.

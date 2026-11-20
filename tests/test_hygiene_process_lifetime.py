@@ -259,7 +259,7 @@ class OwnershipTests(unittest.TestCase):
 
     def test_continuous_output_does_not_starve_timeout_or_drain_deadline(self) -> None:
         self.exit_code = None
-        self.reads = [b"x" * 8192] * 100
+        self.reads = [b"x" * 8192 for _ in range(100)]
         receipt = self.run_entry()
         self.assertEqual(receipt["reason"], "timeout")
         self.assertEqual(receipt["cleanup"], "unknown")
