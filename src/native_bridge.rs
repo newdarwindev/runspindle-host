@@ -397,6 +397,11 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         if state.thread.as_deref() != Some(&request.thread_id) {
             return Err(Error::WrongBinding);
         }
+        // SQLite reads can wait. Refresh authority before exposing a retained
+        // outcome or opening the request's input.
+        if !verifier.verify_turn(request) {
+            return Err(Error::Denied);
+        } // input-time authority
         if let Some(saved) = &state.task_turn {
             if &saved.request != request {
                 return Err(Error::Conflict);
@@ -412,11 +417,6 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         {
             return Err(Error::Conflict);
         }
-        // Loading state/ownership can wait on SQLite. A grant observed before
-        // that wait cannot authorize opening private input afterward.
-        if !verifier.verify_turn(request) {
-            return Err(Error::Denied);
-        } // input-time authority
         let text = crate::native_turn::resolve(resolver, &request.input)?;
         state.task_turn = Some(Reservation {
             request: request.clone(),
@@ -473,18 +473,26 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         }
         let (generation, mut state) = self.load()?.ok_or(Error::Unknown)?;
         validate_cancel_target(&state, request)?;
+        // Replay can disclose a retained outcome without reaching the dispatch
+        // fence, so recheck exact authority after the journal read.
+        let retained = |outcome| {
+            if !verifier.verify_cancel(request) {
+                return Err(Error::Denied);
+            }
+            Ok(outcome)
+        };
         if state.receiving {
-            return Ok(CancelOutcome::Unknown);
+            return retained(CancelOutcome::Unknown);
         }
         if let Some(terminal) = state.terminal {
-            return Ok(CancelOutcome::ObservedTerminal { terminal });
+            return retained(CancelOutcome::ObservedTerminal { terminal });
         }
         let task = state.task_turn.as_mut().ok_or(Error::Unknown)?;
         if let Some(saved) = &task.cancellation {
             if &saved.request != request {
                 return Err(Error::Conflict);
             }
-            return Ok(if saved.acknowledged {
+            return retained(if saved.acknowledged {
                 CancelOutcome::Acknowledged
             } else {
                 CancelOutcome::Unknown
@@ -862,12 +870,13 @@ mod turn_input_authority_tests {
     static BUSY: AtomicBool = AtomicBool::new(false);
     static CANCEL_BUSY: AtomicBool = AtomicBool::new(false);
     static CANCEL_EFFECTS: AtomicU64 = AtomicU64::new(0);
-    struct Io;
+    struct Io(Arc<AtomicU64>);
     impl NativeIo for Io {
         fn start_text_turn(
             &mut self,
             _: crate::native_turn::TurnPermit<'_>,
         ) -> Result<String, WireError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
             Ok("turn".into())
         }
         fn interrupt_turn(
@@ -908,8 +917,14 @@ mod turn_input_authority_tests {
     }
     #[test]
     fn native_turn_input_revocation_during_real_read_lock_wait_opens_nothing() {
+        for retained in [false, true] {
+            check_turn_read_lock_revocation(retained);
+        }
+    }
+
+    fn check_turn_read_lock_revocation(retained: bool) {
         let path = std::env::temp_dir().join(format!(
-            "native-turn-read-lock-{}.sqlite",
+            "native-turn-read-lock-{retained}-{}.sqlite",
             std::process::id()
         ));
         let binding = Binding {
@@ -921,16 +936,40 @@ mod turn_input_authority_tests {
             workspace_id: "workspace".into(),
             lease_epoch: 1,
         };
+        let effects = Arc::new(AtomicU64::new(0));
         let mut bridge = NativeBridge::open(
             &path,
             LocalPin::new("host", "workspace").unwrap(),
             binding.clone(),
             &Owner,
-            || Ok(Io),
+            || Ok(Io(effects.clone())),
             || 120,
         )
         .unwrap();
         assert!(matches!(bridge.launch(&binding), LaunchReply::Accepted(_)));
+        let request = Request {
+            version: crate::native_turn::VERSION.into(),
+            binding,
+            thread_id: "thread".into(),
+            input: InputRef {
+                sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881".into(),
+                byte_length: 1,
+            },
+            profile: Profile {
+                kind: "read_only_text_v1".into(),
+                model: "synthetic".into(),
+            },
+        };
+        if retained {
+            let grant = Grant(Arc::new(AtomicBool::new(true)));
+            let setup_input = Input(Arc::new(AtomicU64::new(0)));
+            assert_eq!(
+                bridge.submit_turn(&request, &grant, &setup_input).unwrap(),
+                crate::native_turn::Outcome::Acknowledged {
+                    turn_id: "turn".into()
+                }
+            );
+        }
         // Rollback-journal exclusive locking blocks the actual read, unlike WAL.
         bridge
             .db
@@ -951,23 +990,7 @@ mod turn_input_authority_tests {
         let opens = Arc::new(AtomicU64::new(0));
         let grant = Grant(authorized.clone());
         let input = Input(opens.clone());
-        let worker = std::thread::spawn(move || {
-            let request = Request {
-                version: crate::native_turn::VERSION.into(),
-                binding,
-                thread_id: "thread".into(),
-                input: InputRef {
-                    sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
-                        .into(),
-                    byte_length: 1,
-                },
-                profile: Profile {
-                    kind: "read_only_text_v1".into(),
-                    model: "synthetic".into(),
-                },
-            };
-            bridge.submit_turn(&request, &grant, &input)
-        });
+        let worker = std::thread::spawn(move || bridge.submit_turn(&request, &grant, &input));
         let deadline = Instant::now() + Duration::from_secs(2);
         while !BUSY.load(Ordering::SeqCst) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(1));
@@ -975,11 +998,13 @@ mod turn_input_authority_tests {
         let observed_wait = BUSY.load(Ordering::SeqCst);
         authorized.store(false, Ordering::SeqCst);
         blocker.execute_batch("COMMIT;").unwrap();
-        assert_eq!(worker.join().unwrap(), Err(Error::Denied));
-        assert!(observed_wait, "actual SQLite busy callback not observed");
-        assert_eq!(opens.load(Ordering::SeqCst), 0);
+        let outcome = worker.join();
         drop(blocker);
         std::fs::remove_file(path).unwrap();
+        assert_eq!(outcome.unwrap(), Err(Error::Denied));
+        assert!(observed_wait, "actual SQLite busy callback not observed");
+        assert_eq!(opens.load(Ordering::SeqCst), 0);
+        assert_eq!(effects.load(Ordering::SeqCst), u64::from(retained));
     }
 
     #[test]
@@ -1006,7 +1031,7 @@ mod turn_input_authority_tests {
             LocalPin::new("host", "workspace").unwrap(),
             binding.clone(),
             &Owner,
-            || Ok(Io),
+            || Ok(Io(Arc::new(AtomicU64::new(0)))),
             || 120,
         )
         .unwrap();
