@@ -1,0 +1,38 @@
+{
+  "base_commit": "42693d6e4be4fcab4c52bef8b6a982e2ac2276e7",
+  "classification": "local_scripted_peer_and_fresh_process_sqlite",
+  "environment": {
+    "platform": "darwin/arm64",
+    "rustc": "1.94.1"
+  },
+  "independent_peer": {
+    "calls_after_dispatch_and_restart": [
+      "launch",
+      "discover"
+    ],
+    "calls_before_launch_intent": 0
+  },
+  "inputs_sha256": {
+    "Cargo.lock": "53c7a035cabf8a4ad87a1437b8e2e9c16e2540c2d4cf2617c1b072b984bc654b",
+    "src/lifecycle.rs": "7d38ac6446a58885f39a91c7968a96e73468b585438e32ee990f4a01db7ff1fd",
+    "tests/durable.rs": "36f14a2c29ee8e7330178424d69a107997efe1a169fd6217845d725d125f2317",
+    "tests/lifecycle.rs": "f6575166b3309a20912504987f7c43af4c5cc51d1f32fd88af89475a55758575",
+    "tools/check_lifecycle_mutations.py": "b04490f8a28017c4bb588e20145c02e7001335298765410141ae47b763b91344"
+  },
+  "issues": [
+    9,
+    2
+  ],
+  "pending": [
+    "actual OS capability qualification",
+    "native app-server lifecycle and live effect qualification"
+  ],
+  "results": {
+    "cargo_clippy_offline_locked_all_targets": "passed",
+    "cargo_fmt_check": "passed",
+    "cargo_test_offline_locked": "passed",
+    "lifecycle_mutations_detected": 4,
+    "macos_static_quality": "same Linux-only pidfd type diagnostics as base",
+    "scaffold": "passed"
+  }
+}
