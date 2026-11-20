@@ -11,9 +11,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, ClassVar, cast
+from typing import Any, cast
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +54,7 @@ EXPECTED_KIND = "native.observed"
 EXPECTED_STATE = "running"
 
 
-def checked_kit(root: Path = ROOT) -> ModuleType:
+def checked_kit(root: Path = ROOT) -> Any:
     """Check reviewed hashes before executing any vendored Python code."""
     pin = json.loads((root / "fixtures/shared-v1.pin.json").read_text())
     if pin != PIN:
@@ -80,8 +81,8 @@ def checked_kit(root: Path = ROOT) -> ModuleType:
 
 
 class ConsumerFixtures(unittest.TestCase):
-    network: ClassVar[list[Any]]
-    kit: ClassVar[ModuleType]
+    network: list[Any]
+    kit: Any
 
     @classmethod
     def setUpClass(cls) -> None:
