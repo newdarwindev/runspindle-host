@@ -232,6 +232,22 @@ fn native_bridge_child() {
     let dir = PathBuf::from(dir);
     let mode = std::env::var("NATIVE_BRIDGE_TEST_MODE").unwrap();
     let events = Events::default();
+    if mode == "damaged_journal" {
+        let result = NativeBridge::open(
+            dir.join("host.sqlite"),
+            pin(),
+            binding(),
+            &Grant,
+            || {
+                let io = Scripted::open(&dir.join("peer.sqlite"), events);
+                io.call("factory", "", "");
+                Ok(io)
+            },
+            || 120,
+        );
+        assert!(matches!(result, Err(Error::Storage)));
+        return;
+    }
     let mut io = Scripted::open(&dir.join("peer.sqlite"), events.clone());
     io.crash_start = mode == "start_crash";
     io.crash_notice = mode == "notice_crash";
@@ -682,6 +698,176 @@ fn native_bridge_failed_factory_does_not_restore_old_owner() {
     assert_eq!(current.discover(&binding()).len(), 1);
     assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
     assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 1);
+}
+
+fn assert_fresh_open_rejects_damaged_journal(dir: &Path) {
+    let mut worker = child(dir, "damaged_journal");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = worker.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            worker.kill().unwrap();
+            worker.wait().unwrap();
+            panic!("fresh journal probe exceeded its deadline");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    assert_eq!(count(&dir.join("peer.sqlite"), "factory"), 0);
+    assert!(status.success());
+}
+
+#[test]
+fn native_bridge_missing_reservation_never_replays_launch() {
+    let t = Temp::new();
+    let mut owner = peer(&t.0, Events::default());
+    assert!(matches!(owner.launch(&binding()), LaunchReply::Accepted(_)));
+    let db = Connection::open(t.0.join("host.sqlite")).unwrap();
+    db.execute(
+        "DELETE FROM host_native_state WHERE operation='operation'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(owner.launch(&binding()), LaunchReply::LostReply);
+    assert!(owner.discover(&binding()).is_empty());
+    assert_fresh_open_rejects_damaged_journal(&t.0);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 0);
+    let retained: (u64, u64) = db
+        .query_row(
+            "SELECT generation,launch_reserved FROM host_native_owner",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(retained, (1, 1));
+}
+
+#[test]
+fn native_bridge_missing_owner_never_reuses_generation() {
+    let t = Temp::new();
+    let mut owner = peer(&t.0, Events::default());
+    assert!(matches!(owner.launch(&binding()), LaunchReply::Accepted(_)));
+    let db = Connection::open(t.0.join("host.sqlite")).unwrap();
+    db.execute(
+        "DELETE FROM host_native_owner WHERE operation='operation'",
+        [],
+    )
+    .unwrap();
+    assert_fresh_open_rejects_damaged_journal(&t.0);
+    assert!(owner.discover(&binding()).is_empty());
+    assert_eq!(count(&t.0.join("peer.sqlite"), "read"), 0);
+    let owners: u64 = db
+        .query_row("SELECT count(*) FROM host_native_owner", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(owners, 0);
+}
+
+#[test]
+fn native_bridge_lost_schema_objects_are_not_recreated() {
+    for fault in [
+        "DELETE FROM host_native_schema",
+        "DROP TABLE host_native_state",
+        "DROP TABLE host_native_owner; DROP TABLE host_native_state",
+        "DROP TABLE host_native_schema",
+    ] {
+        let t = Temp::new();
+        let mut owner = peer(&t.0, Events::default());
+        assert!(matches!(owner.launch(&binding()), LaunchReply::Accepted(_)));
+        let db = Connection::open(t.0.join("host.sqlite")).unwrap();
+        db.execute_batch(fault).unwrap();
+        let schema = || {
+            db.query_row(
+                "SELECT group_concat(name) FROM (SELECT name FROM sqlite_schema ORDER BY name)",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap()
+        };
+        let before = schema();
+        assert_fresh_open_rejects_damaged_journal(&t.0);
+        assert_eq!(schema(), before);
+        assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
+    }
+}
+
+fn use_legacy_owner_schema(db: &Connection) {
+    db.execute_batch(
+        "ALTER TABLE host_native_owner RENAME TO seeded_owners;
+         CREATE TABLE IF NOT EXISTS host_native_owner(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),generation INTEGER NOT NULL CHECK(generation>0),binding BLOB NOT NULL CHECK(length(binding)<=4096));
+         INSERT INTO host_native_owner SELECT operation,generation,binding FROM seeded_owners;
+         DROP TABLE seeded_owners;
+         DROP TABLE host_native_schema;",
+    )
+    .unwrap();
+}
+
+#[test]
+fn native_bridge_legacy_migration_preserves_known_launch_and_fences_ambiguity() {
+    let known = Temp::new();
+    let mut owner = peer(&known.0, Events::default());
+    assert!(matches!(owner.launch(&binding()), LaunchReply::Accepted(_)));
+    drop(owner);
+    let db = Connection::open(known.0.join("host.sqlite")).unwrap();
+    use_legacy_owner_schema(&db);
+    let before: Vec<u8> = db
+        .query_row("SELECT state FROM host_native_state", [], |row| row.get(0))
+        .unwrap();
+    let mut reopened = peer(&known.0, Events::default());
+    assert_eq!(reopened.launch(&binding()), LaunchReply::LostReply);
+    assert_eq!(count(&known.0.join("peer.sqlite"), "start"), 1);
+    assert_eq!(reopened.identities().unwrap().unwrap().thread_id, THREAD);
+    let after: Vec<u8> = db
+        .query_row("SELECT state FROM host_native_state", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before, after);
+
+    let ambiguous = Temp::new();
+    drop(peer(&ambiguous.0, Events::default()));
+    let db = Connection::open(ambiguous.0.join("host.sqlite")).unwrap();
+    use_legacy_owner_schema(&db);
+    assert_fresh_open_rejects_damaged_journal(&ambiguous.0);
+    let marker: u64 = db
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE name='host_native_schema'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(marker, 0); // The failed migration transaction rolled back.
+    assert_eq!(count(&ambiguous.0.join("peer.sqlite"), "start"), 0);
+}
+
+#[test]
+fn native_bridge_reserved_bit_and_journal_commit_together() {
+    let t = Temp::new();
+    let mut owner = peer(&t.0, Events::default());
+    let db = Connection::open(t.0.join("host.sqlite")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER fail_launch BEFORE INSERT ON host_native_state
+         BEGIN SELECT RAISE(ABORT,'injected journal write failure'); END;",
+    )
+    .unwrap();
+    assert_eq!(owner.launch(&binding()), LaunchReply::LostReply);
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 0);
+    let retained: (u64, u64) = db
+        .query_row(
+            "SELECT launch_reserved,(SELECT count(*) FROM host_native_state) FROM host_native_owner",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(retained, (0, 0));
+    db.execute_batch("DROP TRIGGER fail_launch").unwrap();
+    let mut reopened = peer(&t.0, Events::default());
+    assert!(matches!(
+        reopened.launch(&binding()),
+        LaunchReply::Accepted(_)
+    ));
+    assert_eq!(count(&t.0.join("peer.sqlite"), "start"), 1);
 }
 
 // Independent SQLite writer probes prove there is no owner-check/native-call gap.
