@@ -282,6 +282,33 @@ fn native_cancel_unsolicited_and_unresolved_turns_never_authorize_interrupt() {
     assert_eq!(count(&t.0), 0);
 }
 #[test]
+fn native_cancel_revoked_during_acknowledgement_retains_receipt_without_disclosing_it() {
+    use native_turn::CancelOutcome;
+
+    struct GrantUntilInterrupt<'a>(&'a Path);
+    impl native_turn::CancelVerifier for GrantUntilInterrupt<'_> {
+        fn verify_cancel(&self, r: &native_turn::CancelRequest) -> bool {
+            r == &cancel() && count(self.0) == 0
+        }
+    }
+
+    let t = Temp::new();
+    prepared(&t.0);
+    let mut b = bridge(&t.0, false, false);
+    let result = b.cancel_turn(&cancel(), &GrantUntilInterrupt(&t.0));
+    assert_eq!(count(&t.0), 1);
+    assert_eq!(result, Err(Error::Denied));
+    drop(b);
+
+    let mut reopened = bridge(&t.0, false, false);
+    assert_eq!(
+        reopened.cancel_turn(&cancel(), &CancelGrant),
+        Ok(CancelOutcome::Acknowledged)
+    );
+    assert_eq!(reopened.turn_outcome().unwrap(), None);
+    assert_eq!(count(&t.0), 1);
+}
+#[test]
 fn native_cancel_revocation_and_lost_ack_remain_unknown_without_retry() {
     use native_turn::CancelOutcome;
     struct Revoke(AtomicU64);
