@@ -552,6 +552,10 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         saved.turn_id = Some(turn_id.clone());
         state.turn = Some(turn_id.clone());
         self.save(generation, &state)?;
+        // Retain the peer acknowledgement even if the caller can no longer receive it.
+        if !verifier.verify_turn(request) {
+            return Err(Error::Denied);
+        }
         Ok(Outcome::Acknowledged { turn_id })
     }
     /// Reserve and dispatch at most one separately authorized exact-turn interrupt.
@@ -644,6 +648,9 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         }
         saved.acknowledged = true;
         self.save(generation, &state)?;
+        if !verifier.verify_cancel(request) {
+            return Err(Error::Denied);
+        }
         Ok(CancelOutcome::Acknowledged)
     }
     /// Durable sanitized identity readback, separate from a claim of current native liveness.
