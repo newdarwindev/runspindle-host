@@ -486,7 +486,9 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
         self.authorized(binding, Action::Reconcile)?;
         self.writable()?;
         let mut value = self.get(binding)?;
-        if value.terminal() {
+        // A queued operation has never acquired launch intent. A discovery
+        // must not bind a session or consume its opportunity to dispatch.
+        if value.terminal() || value.execution == Execution::Queued {
             return Ok(value);
         }
         let observations = peer.discover(binding);

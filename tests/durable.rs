@@ -161,6 +161,51 @@ fn child() {
     assert!(result.is_ok() || result == Err(Error::Conflict));
 }
 #[test]
+fn queued_operation_remains_dispatchable_after_fresh_process_reconcile() {
+    let t = Temporary::new();
+    let mut peer = Ledger::open(&t.0.join("peer.sqlite"));
+    let host = t.0.join("host.sqlite");
+    let request = Request {
+        version: VERSION.into(),
+        binding: binding(),
+    };
+    let mut offline = presence();
+    offline.reachability = Reachability::Offline;
+    adapter(&host)
+        .submit(request, &offline, 120, &mut peer)
+        .unwrap();
+    assert!(run_child(&t.0, "reconcile").wait().unwrap().success());
+    let mut reopened = adapter(&host);
+    let queued = reopened.snapshot(&binding()).unwrap();
+    assert_eq!(queued.execution, Execution::Queued);
+    assert!(queued.native_session_id.is_none());
+    let calls: u64 = peer
+        .db
+        .query_row("SELECT count(*) FROM calls", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(calls, 0);
+    assert_eq!(
+        reopened
+            .dispatch(&binding(), &presence(), 120, &mut peer)
+            .unwrap()
+            .execution,
+        Execution::Unknown
+    );
+    assert!(run_child(&t.0, "reconcile").wait().unwrap().success());
+    assert_eq!(
+        adapter(&host).snapshot(&binding()).unwrap().execution,
+        Execution::Acknowledged
+    );
+    let calls: String = peer
+        .db
+        .query_row("SELECT group_concat(action,',') FROM calls", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(calls, "launch,discover");
+}
+
+#[test]
 fn dispatch_crash_recovers_in_fresh_process_without_second_launch() {
     let t = Temporary::new();
     assert_eq!(
