@@ -319,9 +319,11 @@ fn reconnect_preserves_observed_session_and_every_binding_field() {
         wrongs.push(vec![o]);
     }
     peer.discoveries = wrongs.into();
+    let mut unknown = initial.clone();
+    unknown.execution = Execution::Unknown;
     for _ in 0..8 {
         assert_eq!(a.reconcile(&b, 110, &mut peer), Err(Error::WrongBinding));
-        assert_eq!(a.snapshot(&b).unwrap(), initial);
+        assert_eq!(a.snapshot(&b).unwrap(), unknown);
     }
     peer.discoveries.push_back(vec![observation(&b, 2, None)]);
     let recovered = a.reconcile(&b, 110, &mut peer).unwrap();
