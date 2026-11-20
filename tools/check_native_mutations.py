@@ -49,6 +49,10 @@ def main() -> None:
             "if thread != expected_thread {",
             "if false && thread != expected_thread {",
         ),
+        "native_contradictory_start_identity": (
+            'if frame["method"] == "thread/started" {',
+            'if false && frame["method"] == "thread/started" {',
+        ),
         "native_unbounded_frame": (
             "if bytes.len() > MAX_FRAME {",
             "if false && bytes.len() > MAX_FRAME {",
