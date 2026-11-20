@@ -142,3 +142,42 @@ EOF after a valid reply. The actual child ledger independently records one
 thread/start and no retry. A healthy reply remains accepted. A deliberate mutation
 removes the consumption check. These source tests require exact-source Rust
 verification; no native/provider or CI qualification is claimed.
+
+## Thread identity observed before the start reply
+
+For Host #8, the `thread/start` caller validates every `thread/started` frame
+it buffered while waiting for that reply. Each must carry an ID that exactly
+matches the reply's thread ID. A malformed or different identity closes the
+transport before the caller accepts a thread ID. The bridge treats the start as
+uncertain and its durable reservation prevents another start. A valid reply
+can still identify a thread when no such notification was observed. Matching
+notifications remain available to consumers, as do notices already buffered
+before the request. Later arrivals remain subject to the ordinary notice checks.
+
+The regression uses a real subprocess with scripted JSON and an independent
+method ledger. A contradictory or malformed ID must produce one start and zero
+read or retry effects. A second test checks that two successful exchanges keep
+their previously buffered notices. The new mutation bypasses this validation.
+These tests cover the window before the matching reply. Recovery from a lost
+native reply and conformance of the actual pinned peer require separate evidence.
+
+The local verification uses base `0ce30ad3dee6b51bc35eec9c716d93f310faa9bf`,
+Rust and Cargo 1.94.1, Python 3.13.18, and a macOS arm64 host. Run the Rust
+suite and native mutation check with cached lockfile dependencies:
+
+```sh
+cargo test --locked --offline --all-features
+python3 -B tools/check_native_mutations.py
+```
+
+The regression failed on the base transport by accepting the contradictory
+ID. With the change, 110 default-feature and 111 all-feature Rust tests passed,
+and all 11 native mutations failed behaviorally. Rust formatting, all-target
+all-feature Clippy, Ruff and scaffold validation passed. Python unittest passed
+94 tests and skipped 15 on macOS. This is scripted component evidence.
+
+```text
+1d73174df98c69aceeccaf70fd6e71d337ff83acdc7f32b44ad415bb88ba225d  Cargo.lock
+0f7f9a2f81b9da9e7f5de688588287193020589facd5565092f2baa0f91d32ac  src/native.rs
+10add14e8d59e4c85d903c576968ddd114953c8c2c3aeb6cea26645debdf884f  tools/check_native_mutations.py
+```

@@ -692,11 +692,22 @@ impl StdioSession {
         if !self.initialized {
             return Err(WireError::Unsupported);
         }
+        let buffered = self.notifications.len();
         let reply = self.rpc(
             "thread/start",
             json!({"ephemeral":true,"approvalPolicy":"never","sandbox":"read-only"}),
         )?;
-        match id(&reply["thread"]["id"]) {
+        let identity = id(&reply["thread"]["id"]).and_then(|thread| {
+            // Before binding the reply, check thread identities observed while
+            // awaiting it. Earlier queued notices belong to earlier exchanges.
+            for frame in self.notifications.iter().skip(buffered) {
+                if frame["method"] == "thread/started" {
+                    notification_ids(frame, &thread)?;
+                }
+            }
+            Ok(thread)
+        });
+        match identity {
             Ok(value) => Ok(value),
             Err(error) => {
                 self.close();
@@ -1404,9 +1415,47 @@ for line in sys.stdin:
         );
     }
     #[test]
+    fn native_start_rejects_conflicting_or_malformed_thread_notices() {
+        for (thread, error) in [
+            ("{'id':'wrong-thread'}", WireError::Unexpected),
+            ("{'id':None}", WireError::Malformed),
+        ] {
+            let (mut peer, ledger) = scripted(&format!(
+                "  print(json.dumps({{'method':'thread/started','params':{{'thread':{thread}}}}}),flush=True)\n  print(json.dumps({{'id':r['id'],'result':{{'thread':{{'id':'native-123'}}}}}}),flush=True)"
+            ));
+            peer.initialize().unwrap();
+            assert_eq!(peer.start_empty_thread(), Err(error));
+            assert_eq!(peer.read_thread("native-123"), Err(WireError::Closed));
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Closed));
+            assert_eq!(peer.next_notice("native-123"), Some(Err(WireError::Closed)));
+            assert_eq!(
+                fs::read_to_string(ledger).unwrap(),
+                "initialize\ninitialized\nthread/start\n"
+            );
+        }
+    }
+    #[test]
+    fn native_start_preserves_thread_notices_from_earlier_exchanges() {
+        let (mut peer, _) = scripted(
+            "  thread='native-one' if r['id']==2 else 'native-two'\n  print(json.dumps({'method':'thread/started','params':{'thread':{'id':thread}}}),flush=True)\n  print(json.dumps({'id':r['id'],'result':{'thread':{'id':thread}}}),flush=True)",
+        );
+        peer.initialize().unwrap();
+        assert_eq!(peer.start_empty_thread().unwrap(), "native-one");
+        assert_eq!(peer.start_empty_thread().unwrap(), "native-two");
+        for thread in ["native-one", "native-two"] {
+            assert_eq!(
+                peer.next_notice(thread),
+                Some(Ok(NativeNotice::ThreadStarted {
+                    thread_id: thread.into(),
+                }))
+            );
+        }
+        assert!(peer.next_notice("native-two").is_none());
+    }
+    #[test]
     fn native_identity_only_consumer_cannot_bypass_poisoned_notice_validation() {
         for notice in [
-            "{'method':'thread/started','params':{'thread':{'id':'foreign'}}}",
+            "{'method':'item/started','params':{'threadId':'foreign','turnId':'turn-native','item':{'id':'item-native'}}}",
             "{'method':'turn/started','params':{'threadId':'native-123','turn':{'id':'turn-native','status':'invalid'}}}",
             "{'method':'unsupported','params':{}}",
         ] {
