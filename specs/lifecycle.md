@@ -38,6 +38,9 @@ change the observed session or any binding field. Future/stale observations and
 non-increasing sequences reject. `max_age_ms` is explicit trusted configuration;
 `now` is an injected trusted monotonic clock value, never peer time. Offline,
 unknown, mismatched, future, expired or stale presence queues the selected pin.
+Reconciling a queued operation returns its existing snapshot without calling
+discovery. A peer observation becomes eligible for reconciliation after the
+selected operation has recorded launch intent.
 
 Cancellation request, acknowledgement and observed terminal are separate. A lost
 cancel response cannot retry; after an unknown launch is discovered, an unsent
