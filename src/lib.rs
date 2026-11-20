@@ -6,6 +6,7 @@ pub mod native;
 pub mod native_bridge;
 pub mod native_turn;
 pub mod storage;
+pub mod telemetry;
 #[derive(Debug, PartialEq)]
 pub enum ReadinessError {
     NotImplemented,

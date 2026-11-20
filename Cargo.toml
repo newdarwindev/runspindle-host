@@ -15,3 +15,18 @@ sha2 = "=0.10.9"
 
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.191"
+
+[features]
+default = []
+otel = ["dep:opentelemetry"]
+
+[dependencies.opentelemetry]
+version = "=0.31.0"
+default-features = false
+features = ["trace"]
+optional = true
+
+[dev-dependencies.opentelemetry_sdk]
+version = "=0.31.0"
+default-features = false
+features = ["trace", "testing"]
