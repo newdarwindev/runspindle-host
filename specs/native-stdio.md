@@ -184,3 +184,16 @@ all-feature Clippy, Ruff and scaffold validation passed. Python unittest passed
 0f7f9a2f81b9da9e7f5de688588287193020589facd5565092f2baa0f91d32ac  src/native.rs
 10add14e8d59e4c85d903c576968ddd114953c8c2c3aeb6cea26645debdf884f  tools/check_native_mutations.py
 ```
+
+## Thread readback identity
+
+`thread/read` checks supported lifecycle notices that arrived before its reply.
+A notice naming another thread or carrying invalid lifecycle metadata rejects
+the read and closes the session even if the reply names the requested thread.
+Earlier queued notices and matching notices stay available in queue order. A
+successful read returns thread identity only, with turn and item observations
+still available through the notice consumer.
+
+Scripted subprocess tests check the independently recorded `thread/read` count,
+closed-session rejection, and the order of retained notices. The mutation suite
+removes the pre-reply notice check to exercise the negative regression.
