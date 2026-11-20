@@ -35,6 +35,13 @@ ledger makes duplicate effects fail and records actual call order. Mutation runs
 remove dispatch deduplication and the session fence in disposable source copies;
 only behavioral assertion failures count. See `docs/durable-lifecycle-tests.json`.
 
+Queued reconciliation is verified in a fresh process before dispatch. The
+independent SQLite peer records zero calls while that operation is queued. A
+later dispatch with fresh selected-host presence records one launch, and a
+second fresh process reconciles the lost reply by discovery. A separate
+component mutation drops the queued guard and adopts a session before launch.
+Exact local results are in [queued reconciliation evidence](../docs/queued-reconciliation-evidence.json).
+
 ## Ordinary filesystem path requirement
 
 Both Sqlite::open and NativeBridge::open reject an empty raw path, the exact

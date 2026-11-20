@@ -187,6 +187,30 @@ fn offline_unknown_stale_future_and_wrong_host_pins_queue_without_failover() {
     }
 }
 #[test]
+fn queued_reconciliation_ignores_even_an_exact_discovery() {
+    let b = binding();
+    let mut a = adapter();
+    let mut peer = accepted();
+    peer.discoveries = [vec![observation(&b, 1, None)]].into();
+    a.submit(
+        request(&b),
+        &presence(Reachability::Offline),
+        110,
+        &mut peer,
+    )
+    .unwrap();
+    let queued = a.reconcile(&b, 110, &mut peer).unwrap();
+    assert_eq!(queued.execution, Execution::Queued);
+    assert!(queued.native_session_id.is_none());
+    assert!(peer.calls.is_empty());
+    let launched = a
+        .dispatch(&b, &presence(Reachability::Online), 110, &mut peer)
+        .unwrap();
+    assert_eq!(launched.execution, Execution::Acknowledged);
+    assert_eq!(peer.observed_effects.as_slice(), std::slice::from_ref(&b));
+}
+
+#[test]
 fn accepted_lost_reply_reconciles_once_without_second_launch() {
     let b = binding();
     let mut a = adapter();
