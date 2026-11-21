@@ -665,7 +665,13 @@ impl StdioSession {
         let reply = self.rpc("initialize", json!({"clientInfo":{"name":"runspindle-host","version":"0.0.0"},"capabilities":{"experimentalApi":false}}))?;
         if !reply["userAgent"]
             .as_str()
-            .is_some_and(|s| s.contains("0.169.0"))
+            .and_then(|agent| agent.split(' ').next())
+            .and_then(|product| product.split_once('/'))
+            .is_some_and(|(name, version)| {
+                !name.is_empty()
+                    && name.bytes().all(|byte| byte.is_ascii_graphic())
+                    && version == "0.169.0"
+            })
         {
             self.close();
             return Err(WireError::Pin);
@@ -993,6 +999,10 @@ mod tests {
     }
 
     fn scripted(behavior: &str) -> (StdioSession, PathBuf) {
+        scripted_user_agent(behavior, "codex/0.169.0")
+    }
+
+    fn scripted_user_agent(behavior: &str, user_agent: &str) -> (StdioSession, PathBuf) {
         let directory = std::env::temp_dir().join(format!(
             "runspindle-wire-{}-{}",
             std::process::id(),
@@ -1007,7 +1017,7 @@ for line in sys.stdin:
  r=json.loads(line)
  with open(sys.argv[1],'a') as f: f.write(r['method']+'\n')
  if r['method']=='initialize':
-  print(json.dumps({{'id':r['id'],'result':{{'userAgent':'codex/0.169.0'}}}}),flush=True)
+  print(json.dumps({{'id':r['id'],'result':{{'userAgent':sys.argv[2]}}}}),flush=True)
  elif r['method']=='initialized': pass
  else:
 {behavior}
@@ -1016,12 +1026,42 @@ for line in sys.stdin:
         let child = Command::new("python3")
             .args(["-u", "-c", &script])
             .arg(&ledger)
+            .arg(user_agent)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
         (StdioSession::from_child(child, directory).unwrap(), ledger)
+    }
+
+    #[test]
+    fn native_handshake_requires_exact_build_version_in_leading_product() {
+        for agent in [
+            "codex/10.169.0",
+            "codex/0.169.01",
+            "codex/0.169.0-alpha.1",
+            "codex/0.169.1 (synthetic target 0.169.0)",
+            "codex/0.169.1 other/0.169.0",
+            "0.169.0",
+            "/0.169.0",
+        ] {
+            let (mut peer, ledger) = scripted_user_agent("  pass", agent);
+            assert_eq!(peer.initialize(), Err(WireError::Pin), "{agent}");
+            assert_eq!(peer.start_empty_thread(), Err(WireError::Unsupported));
+            assert_eq!(peer.initialize(), Err(WireError::Closed));
+            assert_eq!(fs::read_to_string(ledger).unwrap(), "initialize\n");
+        }
+        let (mut peer, ledger) = scripted_user_agent(
+            "  print(json.dumps({'id':r['id'],'result':{'thread':{'id':'native-123'}}}),flush=True)",
+            "runspindle-host/0.169.0 (Synthetic OS 99.0; arm64) unknown",
+        );
+        assert_eq!(peer.initialize(), Ok(()));
+        assert_eq!(peer.start_empty_thread(), Ok("native-123".into()));
+        assert_eq!(
+            fs::read_to_string(ledger).unwrap(),
+            "initialize\ninitialized\nthread/start\n"
+        );
     }
     #[test]
     fn native_owned_child_exit_is_observed_and_repeated_close_is_idempotent() {
