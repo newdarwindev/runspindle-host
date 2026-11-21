@@ -13,10 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
-        "native_handshake_version_substring": (
-            '&& version == "0.169.0"',
-            '&& version.contains("0.169.0")',
-        ),
         "native_binary_digest": (
             'if format!("{:x}", hash.finalize()) != expected {',
             'if false && format!("{:x}", hash.finalize()) != expected {',
@@ -40,6 +36,10 @@ def main() -> None:
         "native_scalar_interrupt_ack": (
             "if !reply.is_object() {",
             "if false && !reply.is_object() {",
+        ),
+        "native_handshake_version_substring": (
+            '&& version == "0.169.0"',
+            '&& version.contains("0.169.0")',
         ),
         "native_unknown_cleanup": (
             "if cleanup_permitted(receipt) {\n            let _ = fs::remove_dir_all",
