@@ -209,7 +209,8 @@ A durable request reservation commits before the external effect. Lost replies,
 process crashes, failed saves and post-reservation denial preserve uncertainty;
 repeated or reopened requests never repeat turn/start. An exact acknowledged
 request returns its persisted identity without rereading input or invoking the
-peer. Changed request data conflicts. The journal refuses submission with a prior
+peer, after checking exact request authority again following the SQLite read.
+Changed request data conflicts. The journal refuses submission with a prior
 observed turn, terminal, pending receipt or receive fence; this cannot prove the
 remote peer has no unobserved active turn. A successful response persists the exact
 turn ID alongside the full authorized request. Task-terminal promotion and
@@ -265,7 +266,9 @@ compile-fail tests cover both restrictions.
 At most one interrupt is dispatched for the request. Timeout, process crash,
 post-reservation denial and failed acknowledgement persistence never authorize
 retry. Exact repetition/reopen returns stored acknowledgement or Unknown without
-another interrupt. Acknowledged means protocol acknowledgement only; it changes
+another interrupt. Returning a retained acknowledgement, uncertainty or terminal
+observation requires a fresh exact cancellation grant after reading the journal.
+Acknowledged means protocol acknowledgement only; it changes
 neither native terminal metadata nor generic Adapter execution.
 
 Existing observed terminal metadata wins before cancellation and after a racing
