@@ -21,6 +21,10 @@ def main() -> None:
             "task.cancellation = Some(CancelReservation {\n            request: request.clone(),\n            acknowledged: false,\n        });",
             "task.cancellation = None;",
         ),
+        "native_cancel_retained_authority": (
+            "if !verifier.verify_cancel(request) {\n                return Err(Error::Denied);\n            }",
+            "if false && !verifier.verify_cancel(request) {\n                return Err(Error::Denied);\n            }",
+        ),
         "native_cancel_no_retry": (
             "if let Some(saved) = &task.cancellation {",
             "if let Some(saved) = None::<&crate::native_turn::CancelReservation> {",
