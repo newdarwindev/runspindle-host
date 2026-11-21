@@ -297,6 +297,14 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
         }
         Ok(())
     }
+    fn check_reserved_effect(&self, reservation: &Snapshot, action: Action) -> Result<(), Error> {
+        self.authorized(&reservation.binding, action)?;
+        // The verifier can wait while another owner reconciles the reservation.
+        if self.snapshot(&reservation.binding)? != *reservation {
+            return Err(Error::Conflict);
+        }
+        Ok(())
+    }
     fn get(&self, binding: &Binding) -> Result<Snapshot, Error> {
         let value = self
             .entries
@@ -393,7 +401,7 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
         self.entries
             .insert(value.binding.operation_id.clone(), value.clone());
         self.persist()?;
-        self.authorized(&value.binding, Action::Launch)?;
+        self.check_reserved_effect(value, Action::Launch)?;
         // There is no retry loop. Any unbound accepted reply remains uncertain.
         let reply = peer.launch(&value.binding);
         self.authorized(&value.binding, Action::Launch)?;
@@ -556,7 +564,7 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
                     self.entries
                         .insert(binding.operation_id.clone(), value.clone());
                     self.persist()?;
-                    self.authorized(binding, Action::Cancel)?;
+                    self.check_reserved_effect(&value, Action::Cancel)?;
                     let reply = peer.cancel(binding, session);
                     self.authorized(binding, Action::Cancel)?;
                     if reply == CancelReply::Acknowledged {

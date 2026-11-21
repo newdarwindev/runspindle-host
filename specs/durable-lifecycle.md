@@ -18,6 +18,12 @@ The conservative shared generation can return conflicts for unrelated concurrent
 mutations; callers may refresh/reconcile, never blindly repeat effects. Bounded
 liveness under sustained writer contention is not qualified.
 
+Launch and cancel reread the exact committed reservation after the last grant
+check and before the peer call. If another process has reconciled the launch or
+observed a terminal session, the paused sender returns a conflict and preserves
+the newer state and receipt. Fresh-process tests verify zero stale launch or
+cancel calls in the separate peer ledger.
+
 Bounds: at most 1,024 operations, 4,096 receipts, a 16 MiB serialized state and
 8,192 SQLite pages. Store configuration is immutable on reopen; there is no
 retention eviction or power-loss/filesystem qualification. `try_drain` commits
