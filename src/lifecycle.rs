@@ -491,24 +491,22 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
         if value.terminal() || value.execution == Execution::Queued {
             return Ok(value);
         }
-        let observations = peer.discover(binding);
-        // The entire discovery result must be exact and unique; never select a convenient match.
-        if observations.len() != 1 {
+        let mut observations = peer.discover(binding);
+        let outcome = match observations.len() {
+            0 => Err(Error::Unknown),
+            1 => Self::observe(
+                &mut value,
+                observations.pop().expect("one observation"),
+                now,
+                self.max_age_ms,
+            ),
+            _ => Err(Error::Ambiguous),
+        };
+        if outcome.is_err() {
             value.execution = Execution::Unknown;
-            self.put(value)?;
-            return Err(if observations.is_empty() {
-                Error::Unknown
-            } else {
-                Error::Ambiguous
-            });
         }
-        Self::observe(
-            &mut value,
-            observations.into_iter().next().expect("one observation"),
-            now,
-            self.max_age_ms,
-        )?;
-        self.put(value)
+        let snapshot = self.put(value)?;
+        outcome.map(|()| snapshot)
     }
     pub fn event(&mut self, binding: &Binding, event: Event, now: u64) -> Result<Snapshot, Error> {
         self.refresh()?;
