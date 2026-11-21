@@ -18,8 +18,11 @@ history is read. Callers must use a separately controlled outbound-denied sandbo
 for native qualification; configuration alone does not enforce network isolation.
 The library adds no host service or operational activation.
 
-Initialization requests experimentalApi=false and requires the pinned version in
-the returned user-agent, then emits initialized. This is version negotiation, not
+Initialization requests experimentalApi=false and requires the exact pinned
+version in the leading user-agent product token before emitting initialized.
+Versions embedded in another build version or in trailing metadata fail the
+handshake. The product format follows the [pinned Codex user-agent builder](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/login/src/auth/default_client.rs).
+This is version negotiation, not
 a claim that unsupported runtime capabilities are available. The only public
 methods create an empty ephemeral thread, read its metadata, and interrupt an
 explicit native thread/turn pair. There is no prompt/turn submission, arbitrary
