@@ -134,6 +134,27 @@ fn run_child(dir: &Path, mode: &str) -> std::process::Child {
         .spawn()
         .unwrap()
 }
+struct AdvanceReservation<'a> {
+    directory: &'a Path,
+    action: Action,
+    mode: &'static str,
+    checks: std::cell::Cell<usize>,
+}
+impl Verifier for AdvanceReservation<'_> {
+    fn verify(&self, binding: &Binding, action: Action) -> bool {
+        if action == self.action {
+            self.checks.set(self.checks.get() + 1);
+            if self.checks.get() == 2 {
+                // The second check occurs after the original reservation commits.
+                assert!(run_child(self.directory, self.mode)
+                    .wait()
+                    .unwrap()
+                    .success());
+            }
+        }
+        Grant.verify(binding, action)
+    }
+}
 #[test]
 fn child() {
     let Ok(dir) = std::env::var("HOST_TEST_DIR") else {
@@ -185,6 +206,28 @@ fn child() {
             a.reconcile(&binding(), 120, &mut peer).map(|s| s.execution),
             expected
         );
+        return;
+    }
+    if mode == "discover_missing" {
+        assert_eq!(a.reconcile(&binding(), 120, &mut peer), Err(Error::Unknown));
+        return;
+    }
+    if mode == "observe_terminal" {
+        let mut observation = observation();
+        observation.sequence = 2;
+        observation.observed_at_ms = 115;
+        observation.terminal = Some(Terminal::Completed);
+        a.event(
+            &binding(),
+            Event {
+                version: VERSION.into(),
+                observation,
+                kind: EventKind::Terminal(Terminal::Completed),
+                encoded_size: 128,
+            },
+            120,
+        )
+        .unwrap();
         return;
     }
     let result = a.submit(
@@ -279,6 +322,93 @@ fn unmarked_lifecycle_store_adopts_existing_generation_without_replacing_it() {
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
     assert_eq!(version, 1);
+}
+
+#[test]
+fn launch_is_fenced_after_fresh_discovery_changes_reservation() {
+    let temp = Temporary::new();
+    let host = temp.0.join("host.sqlite");
+    let mut peer = Ledger::open(&temp.0.join("peer.sqlite"));
+    let verifier = AdvanceReservation {
+        directory: &temp.0,
+        action: Action::Launch,
+        mode: "discover_missing",
+        checks: std::cell::Cell::new(0),
+    };
+    let mut original =
+        Adapter::with_storage(verifier, Sqlite::open(&host).unwrap(), 8, 32, 50).unwrap();
+    let result = original.submit(
+        Request {
+            version: VERSION.into(),
+            binding: binding(),
+        },
+        &presence(),
+        120,
+        &mut peer,
+    );
+    let calls: String = peer
+        .db
+        .query_row("SELECT group_concat(action,',') FROM calls", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(calls, "discover");
+    assert_eq!(
+        peer.db
+            .query_row("SELECT count(*) FROM effects", [], |row| row
+                .get::<_, u64>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(result, Err(Error::Conflict));
+    let mut reopened = adapter(&host);
+    let state = reopened.snapshot(&binding()).unwrap();
+    assert_eq!(state.execution, Execution::Unknown);
+    assert_eq!(
+        reopened.try_drain().unwrap(),
+        vec![Receipt {
+            version: VERSION.into(),
+            snapshot: state
+        }]
+    );
+}
+
+#[test]
+fn cancel_is_fenced_after_fresh_terminal_observation() {
+    let temp = Temporary::new();
+    let host = temp.0.join("host.sqlite");
+    assert!(run_child(&temp.0, "submit").wait().unwrap().success());
+    assert!(run_child(&temp.0, "reconcile").wait().unwrap().success());
+    adapter(&host).try_drain().unwrap();
+    let verifier = AdvanceReservation {
+        directory: &temp.0,
+        action: Action::Cancel,
+        mode: "observe_terminal",
+        checks: std::cell::Cell::new(0),
+    };
+    let mut original =
+        Adapter::with_storage(verifier, Sqlite::open(&host).unwrap(), 8, 32, 50).unwrap();
+    let mut peer = Ledger::open(&temp.0.join("peer.sqlite"));
+    let result = original.cancel(&binding(), &mut peer);
+    let calls: String = peer
+        .db
+        .query_row("SELECT group_concat(action,',') FROM calls", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(calls, "launch,discover");
+    assert_eq!(result, Err(Error::Conflict));
+    let mut reopened = adapter(&host);
+    let state = reopened.snapshot(&binding()).unwrap();
+    assert_eq!(state.execution, Execution::Terminal(Terminal::Completed));
+    assert_eq!(state.cancellation, Cancellation::ObservedTerminal);
+    assert_eq!(
+        reopened.try_drain().unwrap(),
+        vec![Receipt {
+            version: VERSION.into(),
+            snapshot: state
+        }]
+    );
 }
 #[test]
 fn queued_operation_remains_dispatchable_after_fresh_process_reconcile() {
