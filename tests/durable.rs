@@ -5,6 +5,7 @@ use runspindle_host::{
 };
 use rusqlite::{params, Connection};
 use std::{
+    cell::Cell,
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
@@ -465,6 +466,103 @@ fn stale_owner_cannot_overwrite_reconciliation() {
         a.compare_and_swap(g, &Stored::default()),
         Err(Error::Conflict)
     );
+}
+#[test]
+fn revoked_peer_responses_cannot_change_durable_lifecycle() {
+    struct Revocable<'a>(&'a Cell<Option<Action>>);
+    impl Verifier for Revocable<'_> {
+        fn verify(&self, b: &Binding, action: Action) -> bool {
+            b == &binding() && self.0.get() != Some(action)
+        }
+    }
+    struct RevokingPeer<'a> {
+        ledger: Ledger,
+        revoked: &'a Cell<Option<Action>>,
+    }
+    impl Peer for RevokingPeer<'_> {
+        fn launch(&mut self, b: &Binding) -> LaunchReply {
+            assert_eq!(self.ledger.launch(b), LaunchReply::LostReply);
+            self.revoked.set(Some(Action::Launch));
+            LaunchReply::Accepted(observation())
+        }
+        fn discover(&mut self, b: &Binding) -> Vec<Observation> {
+            let observations = self.ledger.discover(b);
+            self.revoked.set(Some(Action::Reconcile));
+            observations
+        }
+        fn cancel(&mut self, b: &Binding, session: &str) -> CancelReply {
+            assert_eq!(self.ledger.cancel(b, session), CancelReply::LostReply);
+            self.revoked.set(Some(Action::Cancel));
+            CancelReply::Acknowledged
+        }
+    }
+
+    let t = Temporary::new();
+    let host = t.0.join("host.sqlite");
+    let b = binding();
+    let revoked = Cell::new(None);
+    let mut peer = RevokingPeer {
+        ledger: Ledger::open(&t.0.join("peer.sqlite")),
+        revoked: &revoked,
+    };
+    let open = || {
+        Adapter::with_storage(Revocable(&revoked), Sqlite::open(&host).unwrap(), 8, 32, 50).unwrap()
+    };
+
+    let mut original = open();
+    assert_eq!(
+        original.submit(
+            Request {
+                version: VERSION.into(),
+                binding: b.clone()
+            },
+            &presence(),
+            120,
+            &mut peer
+        ),
+        Err(Error::Denied)
+    );
+    drop(original);
+    let mut recovering = open();
+    let scheduled = recovering.snapshot(&b).unwrap();
+    assert_eq!(scheduled.execution, Execution::Scheduled);
+    assert!(scheduled.native_session_id.is_none());
+    assert!(recovering.try_drain().unwrap().is_empty());
+    assert_eq!(recovering.reconcile(&b, 120, &mut peer), Err(Error::Denied));
+    assert_eq!(recovering.snapshot(&b).unwrap(), scheduled);
+    assert!(recovering.try_drain().unwrap().is_empty());
+    drop(recovering);
+
+    assert!(run_child(&t.0, "reconcile").wait().unwrap().success());
+    let mut cancelling = open();
+    let running = cancelling.snapshot(&b).unwrap();
+    assert_eq!(
+        running.native_session_id.as_deref(),
+        Some("peer-observed-session")
+    );
+    let receipts = cancelling.try_drain().unwrap();
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].snapshot, running);
+    assert_eq!(cancelling.cancel(&b, &mut peer), Err(Error::Denied));
+    drop(cancelling);
+
+    assert!(run_child(&t.0, "cancel_crash").wait().unwrap().success());
+    let mut reopened = adapter(&host);
+    let pending = reopened.snapshot(&b).unwrap();
+    assert_eq!(pending.cancellation, Cancellation::Requested);
+    assert!(pending.cancel_dispatched);
+    assert_eq!(pending.native_session_id, running.native_session_id);
+    assert!(reopened.try_drain().unwrap().is_empty());
+    let calls: String = peer
+        .ledger
+        .db
+        .query_row(
+            "SELECT group_concat(action,',') FROM (SELECT action FROM calls ORDER BY id)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(calls, "launch,discover,discover,cancel");
 }
 #[test]
 fn changed_binding_and_configuration_conflict_after_reopen() {
