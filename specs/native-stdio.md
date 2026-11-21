@@ -32,7 +32,10 @@ establish completion. An empty thread is not execution of an authorized task.
 
 Input lines including newline are bounded to 65,536 bytes, output to 4,096 bytes,
 incoming frames and pending notifications to 32 each, with one request in flight.
-Read and write responses have five-second deadlines. Unsupported server requests,
+Read and write responses have separate five-second monotonic deadlines. The
+adapter checks the deadline before waiting and again before accepting a queued
+frame or write acknowledgement. An elapsed deadline leaves the request outcome
+unknown even when a result is already queued. Unsupported server requests,
 foreign/duplicate reply IDs, recursively duplicated JSON members,
 malformed/oversized frames, overflow and uncertain
 transport results close the connection; no method automatically retries effects.

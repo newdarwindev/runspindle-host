@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Require behavioral failures for native frame and identity mutations."""
+"""Require behavioral failures for native transport mutations."""
 
 import json
 import shutil
@@ -24,6 +24,17 @@ def main() -> None:
         "native_observed_poison": (
             "if self.reader_failed.load(Ordering::Acquire) {",
             "if false && self.reader_failed.load(Ordering::Acquire) {",
+        ),
+        "native_wait_admits_expired_queue": (
+            "let remaining = deadline\n"
+            "        .checked_duration_since(now())\n"
+            "        .filter(|duration| !duration.is_zero())\n"
+            "        .ok_or(mpsc::RecvTimeoutError::Timeout)?;",
+            "let remaining = deadline.saturating_duration_since(now());",
+        ),
+        "native_wait_accepts_late_dequeue": (
+            "if now() >= deadline {",
+            "if false && now() >= deadline {",
         ),
         "native_setup_observed_cleanup": (
             "let result = if result.is_err() {",

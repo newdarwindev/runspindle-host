@@ -413,6 +413,24 @@ fn cleanup_permitted(receipt: ShutdownReceipt) -> bool {
 
 type WriteRequest = (Vec<u8>, mpsc::Sender<Result<(), WireError>>);
 
+fn receive_before<T>(
+    receiver: &Receiver<T>,
+    deadline: Instant,
+    now: impl Fn() -> Instant,
+) -> Result<T, mpsc::RecvTimeoutError> {
+    // A ready channel can still return a message after its receiver's timeout
+    // has elapsed. Check admission to the wait and acceptance of its result.
+    let remaining = deadline
+        .checked_duration_since(now())
+        .filter(|duration| !duration.is_zero())
+        .ok_or(mpsc::RecvTimeoutError::Timeout)?;
+    let value = receiver.recv_timeout(remaining)?;
+    if now() >= deadline {
+        return Err(mpsc::RecvTimeoutError::Timeout);
+    }
+    Ok(value)
+}
+
 pub struct StdioSession {
     child: Child,
     input: Option<SyncSender<WriteRequest>>,
@@ -581,14 +599,13 @@ impl StdioSession {
             return Err(WireError::Oversized);
         }
         let (done, completion) = mpsc::channel();
+        let deadline = Instant::now() + DEADLINE;
         self.input
             .as_ref()
             .ok_or(WireError::Closed)?
             .try_send((bytes, done))
             .map_err(|_| WireError::Backpressure)?;
-        completion
-            .recv_timeout(DEADLINE)
-            .map_err(|_| WireError::Timeout)?
+        receive_before(&completion, deadline, Instant::now).map_err(|_| WireError::Timeout)?
     }
     fn rpc(&mut self, method: &str, params: Value) -> Result<Value, WireError> {
         let started = std::time::SystemTime::now();
@@ -613,10 +630,8 @@ impl StdioSession {
         self.send(json!({"id":request_id,"method":method,"params":params}))?;
         let deadline = Instant::now() + DEADLINE;
         loop {
-            let frame = self
-                .incoming
-                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                .map_err(|e| match e {
+            let frame =
+                receive_before(&self.incoming, deadline, Instant::now).map_err(|e| match e {
                     mpsc::RecvTimeoutError::Timeout => WireError::Timeout,
                     _ => WireError::Closed,
                 })??;
@@ -1293,6 +1308,38 @@ for line in sys.stdin:
                 1
             );
         }
+    }
+
+    #[test]
+    fn native_wait_does_not_consume_a_reply_after_the_deadline() {
+        let (send, receive) = mpsc::channel();
+        let reply = json!({"id": 2, "result": {"thread": {"id": "native-thread"}}});
+        send.send(reply.clone()).unwrap();
+        let deadline = Instant::now();
+
+        assert_eq!(
+            receive_before(&receive, deadline, || deadline),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        );
+        assert_eq!(receive.try_recv().unwrap(), reply);
+    }
+
+    #[test]
+    fn native_wait_checks_the_deadline_again_after_dequeuing() {
+        let (send, receive) = mpsc::channel();
+        send.send(Ok::<(), WireError>(())).unwrap();
+        let before = Instant::now();
+        let deadline = before + DEADLINE;
+        let clock = std::cell::Cell::new(before);
+
+        assert_eq!(
+            receive_before(&receive, deadline, || clock.replace(deadline)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        );
+        assert_eq!(receive.try_recv(), Err(mpsc::TryRecvError::Empty));
+
+        send.send(Ok(())).unwrap();
+        assert_eq!(receive_before(&receive, deadline, || before), Ok(Ok(())));
     }
     #[cfg(unix)]
     #[test]
