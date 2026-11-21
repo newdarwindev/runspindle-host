@@ -321,6 +321,44 @@ fn native_cancel_revocation_and_lost_ack_remain_unknown_without_retry() {
     assert_eq!(count(&t.0), 1);
 }
 #[test]
+fn native_cancel_retained_outcomes_require_fresh_exact_authority() {
+    use native_turn::CancelOutcome;
+    use runspindle_host::lifecycle::Terminal;
+    struct Revoke(AtomicU64);
+    impl native_turn::CancelVerifier for Revoke {
+        fn verify_cancel(&self, _: &native_turn::CancelRequest) -> bool {
+            self.0.fetch_add(1, Ordering::SeqCst) == 0
+        }
+    }
+    for (lost, expected) in [
+        (false, CancelOutcome::Acknowledged),
+        (true, CancelOutcome::Unknown),
+    ] {
+        let t = Temp::new();
+        prepared(&t.0);
+        let mut b = bridge(&t.0, false, lost);
+        assert_eq!(b.cancel_turn(&cancel(), &CancelGrant), Ok(expected.clone()));
+        assert_eq!(
+            b.cancel_turn(&cancel(), &Revoke(AtomicU64::new(0))),
+            Err(Error::Denied)
+        );
+        assert_eq!(b.cancel_turn(&cancel(), &CancelGrant), Ok(expected));
+        notice(&t.0, "completed");
+        assert!(b.poll().unwrap());
+        assert_eq!(
+            b.cancel_turn(&cancel(), &Revoke(AtomicU64::new(0))),
+            Err(Error::Denied)
+        );
+        assert_eq!(
+            b.cancel_turn(&cancel(), &CancelGrant),
+            Ok(CancelOutcome::ObservedTerminal {
+                terminal: Terminal::Completed
+            })
+        );
+        assert_eq!(count(&t.0), 1);
+    }
+}
+#[test]
 fn native_cancel_terminal_metadata_before_and_after_ack_is_not_overwritten() {
     use native_turn::CancelOutcome;
     use runspindle_host::lifecycle::Terminal;
