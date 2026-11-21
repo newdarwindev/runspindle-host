@@ -18,8 +18,12 @@ def main() -> None:
             "if false && !verifier.verify(binding, Action::TakeOwnership) {",
         ),
         "native_bridge_stale_owner": (
-            "if current != Some(owner) {",
-            "if false && current != Some(owner) {",
+            "if record.generation != owner {",
+            "if false && record.generation != owner {",
+        ),
+        "native_bridge_reservation_loss_allows_factory": (
+            "if self.launch_reserved != u64::from(self.has_state) {",
+            "if false && self.launch_reserved != u64::from(self.has_state) {",
         ),
         "native_bridge_relaunch": (
             "if self.reserve().is_err() {\n            return LaunchReply::LostReply;\n        }",
@@ -47,6 +51,13 @@ def main() -> None:
                 else:
                     shutil.copy2(item, root / path)
             (root / "src/native_bridge.rs").write_text(source.replace(old, new))
+            focus = []
+            if name == "native_bridge_reservation_loss_allows_factory":
+                focus = [
+                    "native_bridge_missing_reservation_never_replays_launch",
+                    "--",
+                    "--exact",
+                ]
             run = subprocess.run(
                 [
                     "cargo",
@@ -57,6 +68,7 @@ def main() -> None:
                     "native_bridge",
                     "--target-dir",
                     str(ROOT / "target/native-bridge-mutations"),
+                    *focus,
                 ],
                 cwd=root,
                 text=True,
@@ -69,6 +81,8 @@ def main() -> None:
             if "test result: FAILED" not in run.stdout:
                 raise AssertionError(run.stdout)
             if "could not compile" in run.stdout:
+                raise AssertionError(run.stdout)
+            if focus and f"test {focus[0]} ... FAILED" not in run.stdout:
                 raise AssertionError(run.stdout)
             rows.append({"mutation": name, "behavioral_failure_observed": True})
     print(

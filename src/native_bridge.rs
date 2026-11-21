@@ -14,6 +14,11 @@ use std::path::Path;
 const MAX_ROWS: u64 = 1024;
 const MAX_ITEMS: usize = 128;
 const MAX_BYTES: usize = 65536;
+const STATE_DDL: &str = "CREATE TABLE host_native_state(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),version INTEGER NOT NULL CHECK(version=1),generation INTEGER NOT NULL,state BLOB NOT NULL CHECK(length(state)<=65536))";
+const OWNER_DDL: &str = "CREATE TABLE host_native_owner(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),generation INTEGER NOT NULL CHECK(generation>0),binding BLOB NOT NULL CHECK(length(binding)<=4096))";
+const RESERVATION_DDL: &str =
+    "launch_reserved INTEGER NOT NULL DEFAULT 1 CHECK(launch_reserved IN (0,1))";
+const SCHEMA_DDL: &str = "CREATE TABLE host_native_schema(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL CHECK(version=2))";
 
 /// Injected ports are scripted unless backed by the separately pinned StdioSession.
 /// No port may discover an operation by guessing a native ID or reissuing start.
@@ -148,21 +153,107 @@ fn load_state(db: &Connection, binding: &Binding) -> Result<Option<(u64, State)>
     })
     .transpose()
 }
+fn table_sql(db: &Connection, name: &str) -> Result<Option<String>, Error> {
+    db.query_row(
+        "SELECT sql FROM sqlite_schema WHERE type='table' AND name=?1",
+        [name],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(sql)
+}
+
+// Called under the same writer lock as ownership admission. A partially missing
+// schema is never a new store. The marker also detects loss of both data tables.
+fn initialize_schema(db: &Connection) -> Result<(), Error> {
+    let state = table_sql(db, "host_native_state")?;
+    let owner = table_sql(db, "host_native_owner")?;
+    let marker = table_sql(db, "host_native_schema")?;
+    let current_owner = format!("{}, {RESERVATION_DDL})", &OWNER_DDL[..OWNER_DDL.len() - 1]);
+    match (state.as_deref(), owner.as_deref(), marker.as_deref()) {
+        (Some(STATE_DDL), Some(owner), Some(SCHEMA_DDL)) if owner == current_owner => {
+            let marker = db
+                .query_row(
+                    "SELECT version FROM host_native_schema WHERE id=1",
+                    [],
+                    |row| row.get::<_, u64>(0),
+                )
+                .optional()
+                .map_err(sql)?;
+            return if marker == Some(2) {
+                Ok(())
+            } else {
+                Err(Error::Storage)
+            };
+        }
+        (None, None, None) => db
+            .execute_batch(&format!("{STATE_DDL};{OWNER_DDL};"))
+            .map_err(sql)?,
+        (Some(STATE_DDL), Some(OWNER_DDL), None) => {}
+        _ => return Err(Error::Storage),
+    }
+    // Legacy owner-only rows cannot prove the launch row was never written.
+    // Defaulting them to reserved blocks that ambiguity without rewriting journals.
+    db.execute_batch(&format!(
+        "ALTER TABLE host_native_owner ADD COLUMN {RESERVATION_DDL};
+         {SCHEMA_DDL};
+         INSERT INTO host_native_schema VALUES(1,2);"
+    ))
+    .map_err(sql)
+}
+
+struct OwnerRecord {
+    generation: u64,
+    binding: Vec<u8>,
+    launch_reserved: u64,
+    has_state: bool,
+    has_schema_marker: bool,
+}
+impl OwnerRecord {
+    fn validate(&self, binding: &Binding) -> Result<(), Error> {
+        let saved: Binding = serde_json::from_slice(&self.binding).map_err(|_| Error::Storage)?;
+        if &saved != binding {
+            return Err(Error::Conflict);
+        }
+        if self.generation == 0 || !self.has_schema_marker {
+            return Err(Error::Storage);
+        }
+        if self.launch_reserved != u64::from(self.has_state) {
+            return Err(Error::Storage);
+        }
+        Ok(())
+    }
+}
+
+fn read_owner(db: &Connection, binding: &Binding) -> Result<Option<OwnerRecord>, Error> {
+    db.query_row(
+        "SELECT generation,binding,launch_reserved,
+                EXISTS(SELECT 1 FROM host_native_state WHERE operation=?1),
+                EXISTS(SELECT 1 FROM host_native_schema WHERE id=1 AND version=2)
+             FROM host_native_owner WHERE operation=?1",
+        [&binding.operation_id],
+        |r| {
+            Ok(OwnerRecord {
+                generation: r.get(0)?,
+                binding: r.get(1)?,
+                launch_reserved: r.get(2)?,
+                has_state: r.get(3)?,
+                has_schema_marker: r.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(sql)
+}
+
 // A generation is allocated by SQLite, not by the caller or peer. It fences
 // transport ownership only; it is distinct from the immutable authority lease.
 fn check_owner(db: &Connection, binding: &Binding, owner: u64) -> Result<(), Error> {
-    let current: Option<u64> = db
-        .query_row(
-            "SELECT generation FROM host_native_owner WHERE operation=?1",
-            [&binding.operation_id],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(sql)?;
-    if current != Some(owner) {
+    let record = read_owner(db, binding)?.ok_or(Error::Conflict)?;
+    if record.generation != owner {
         return Err(Error::Conflict);
     }
-    Ok(())
+    record.validate(binding)
 }
 
 // The first committed ownership claim does not preserve authority while this
@@ -238,10 +329,10 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         let mut db = Connection::open(path).map_err(sql)?;
         db.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(sql)?;
-        db.execute_batch("PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;PRAGMA max_page_count=8192;
-            CREATE TABLE IF NOT EXISTS host_native_state(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),version INTEGER NOT NULL CHECK(version=1),generation INTEGER NOT NULL,state BLOB NOT NULL CHECK(length(state)<=65536));
-            CREATE TABLE IF NOT EXISTS host_native_owner(operation TEXT PRIMARY KEY CHECK(length(operation)<=128),generation INTEGER NOT NULL CHECK(generation>0),binding BLOB NOT NULL CHECK(length(binding)<=4096));").map_err(sql)?;
-        load_state(&db, &binding)?;
+        db.execute_batch(
+            "PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;PRAGMA max_page_count=8192;",
+        )
+        .map_err(sql)?;
         let tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(sql)?;
@@ -249,24 +340,19 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         if !verifier.verify(&binding, Action::TakeOwnership) {
             return Err(Error::Denied);
         }
-        let previous: Option<(u64, Vec<u8>)> = tx
-            .query_row(
-                "SELECT generation,binding FROM host_native_owner WHERE operation=?1",
-                [&binding.operation_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(sql)?;
-        let owner = if let Some((generation, bytes)) = previous {
-            let saved: Binding = serde_json::from_slice(&bytes).map_err(|_| Error::Storage)?;
-            if saved != binding {
-                return Err(Error::Conflict);
-            }
-            generation
+        initialize_schema(&tx)?;
+        let state = load_state(&tx, &binding)?;
+        let owner = if let Some(record) = read_owner(&tx, &binding)? {
+            record.validate(&binding)?;
+            record
+                .generation
                 .checked_add(1)
                 .filter(|n| *n <= i64::MAX as u64)
                 .ok_or(Error::Capacity)?
         } else {
+            if state.is_some() {
+                return Err(Error::Storage);
+            }
             let count: u64 = tx
                 .query_row("SELECT count(*) FROM host_native_owner", [], |r| r.get(0))
                 .map_err(sql)?;
@@ -276,7 +362,12 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
             1
         };
         let bytes = serde_json::to_vec(&binding).map_err(|_| Error::Storage)?;
-        tx.execute("INSERT INTO host_native_owner VALUES(?1,?2,?3) ON CONFLICT(operation) DO UPDATE SET generation=excluded.generation", params![binding.operation_id, owner, bytes]).map_err(sql)?;
+        tx.execute(
+            "INSERT INTO host_native_owner(operation,generation,binding,launch_reserved)
+             VALUES(?1,?2,?3,0) ON CONFLICT(operation) DO UPDATE SET generation=excluded.generation",
+            params![binding.operation_id, owner, bytes],
+        )
+        .map_err(sql)?;
         tx.commit().map_err(sql)?;
         // Persist ownership before factory I/O: a crash or failed factory never
         // restores authority to the old owner. Takeover is not launch permission.
@@ -293,8 +384,11 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         Ok(bridge)
     }
     fn load(&self) -> Result<Option<(u64, State)>, Error> {
-        check_owner(&self.db, &self.binding, self.owner)?;
-        load_state(&self.db, &self.binding)
+        let tx = self.db.unchecked_transaction().map_err(sql)?;
+        check_owner(&tx, &self.binding, self.owner)?;
+        let state = load_state(&tx, &self.binding)?;
+        tx.commit().map_err(sql)?;
+        Ok(state)
     }
     /// Serialize the owner check and native call against ownership replacement.
     /// NativeIo must be bounded and must not reenter this SQLite database. The
@@ -350,14 +444,20 @@ impl<I: NativeIo, C: Fn() -> u64> NativeBridge<I, C> {
         }
         if tx
             .execute(
-                "INSERT OR IGNORE INTO host_native_state VALUES(?1,1,0,?2)",
-                params![self.binding.operation_id, bytes],
+                "UPDATE host_native_owner SET launch_reserved=1
+                 WHERE operation=?1 AND generation=?2 AND launch_reserved=0",
+                params![self.binding.operation_id, self.owner],
             )
             .map_err(sql)?
             != 1
         {
             return Err(Error::Conflict);
         }
+        tx.execute(
+            "INSERT INTO host_native_state VALUES(?1,1,0,?2)",
+            params![self.binding.operation_id, bytes],
+        )
+        .map_err(sql)?;
         tx.commit().map_err(sql)
     }
     fn observation(&self, state: &mut State) -> Result<Observation, Error> {
@@ -826,7 +926,14 @@ mod owner_tests {
             lease_epoch: 1,
         };
         let blocker = Connection::open(&path).unwrap();
-        blocker.execute_batch("CREATE TABLE host_native_owner(operation TEXT PRIMARY KEY,generation INTEGER);INSERT INTO host_native_owner VALUES('operation',2);BEGIN IMMEDIATE;").unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        initialize_schema(&blocker).unwrap();
+        blocker
+            .execute(
+                "INSERT INTO host_native_owner VALUES('operation',2,?1,0)",
+                [serde_json::to_vec(&binding).unwrap()],
+            )
+            .unwrap();
         let granted = Arc::new(AtomicBool::new(true));
         let calls = Arc::new(AtomicU64::new(0));
         let (ready, entered) = mpsc::channel();

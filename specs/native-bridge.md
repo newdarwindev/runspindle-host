@@ -148,6 +148,38 @@ A deliberate mutation removing owner comparison must fail the stale-owner test.
 These are synthetic peer/component tests with real SQLite, not new native-peer
 qualification.
 
+### Launch reservation and schema recovery
+
+The version 2 native layout retains the unchanged version 1 state records.
+An independent layout marker records the ownership schema version. The owner
+row keeps a launch-reserved flag. The bridge sets that flag and inserts the
+state reservation in the same SQLite transaction before any thread start.
+Missing state with a reserved owner, or state without its owner, blocks
+reopening before the transport factory. Existing owners also check the
+reservation pair and marker in their effect fences.
+
+An exact legacy layout migrates under the ownership writer lock without
+rewriting saved native state. Every preexisting owner is treated as potentially
+reserved. A legacy owner with no state row is ambiguous and fails closed.
+An empty legacy layout can accept new operations. Stop pre-change writers
+before opening the new layout.
+
+Fresh-process tests delete a reservation, an owner and layout objects while
+observing independent factory and peer call counts. Another test aborts the
+state insert and observes that the flag change rolls back before effect. The
+deliberate mutation removes the owner/state agreement check. These checks cover
+individual missing records and retained-marker schema loss. Simultaneous loss of
+both records for one operation, whole-layout loss, store rollback and power-loss
+qualification remain outside this evidence.
+
+Run the focused component regressions and their behavioral mutation gate
+with preinstalled dependencies:
+
+```sh
+cargo test --locked --offline --test native_bridge
+python3 -B tools/check_native_bridge_mutations.py
+```
+
 The owner-fencing follow-up also tests revocation during an actual contended
 factory-lock wait, full-open third-check denial with retained owner generation,
 and a concurrent child process holding factory ownership while the old process

@@ -29,11 +29,18 @@ class NativeMutationGuards(unittest.TestCase):
             "check_native_bridge_mutations.py",
             "check_durable_path_mutations.py",
         ):
+            focused = checker == "check_native_bridge_mutations.py"
             for code, output, accepted in (
                 (0, "test result: ok", False),
                 (1, "could not compile; test result: FAILED", False),
                 (1, "unrelated tool failure", False),
-                (1, "test result: FAILED", True),
+                (1, "test result: FAILED", not focused),
+                (
+                    1,
+                    "test native_bridge_missing_reservation_never_replays_launch ... FAILED\n"
+                    "test result: FAILED",
+                    True,
+                ),
             ):
                 with self.subTest(checker=checker, code=code, output=output):
                     result = subprocess.run(
