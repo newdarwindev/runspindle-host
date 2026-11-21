@@ -41,6 +41,10 @@ def main() -> None:
             "if !reply.is_object() {",
             "if false && !reply.is_object() {",
         ),
+        "native_handshake_version_substring": (
+            '&& version == "0.169.0"',
+            '&& version.contains("0.169.0")',
+        ),
         "native_unknown_cleanup": (
             "if cleanup_permitted(receipt) {\n            let _ = fs::remove_dir_all",
             "if true {\n            let _ = fs::remove_dir_all",
