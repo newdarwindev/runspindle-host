@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "src/native.rs").read_text()
     mutations = {
+        "native_handshake_version_substring": (
+            '&& version == "0.169.0"',
+            '&& version.contains("0.169.0")',
+        ),
         "native_binary_digest": (
             'if format!("{:x}", hash.finalize()) != expected {',
             'if false && format!("{:x}", hash.finalize()) != expected {',
