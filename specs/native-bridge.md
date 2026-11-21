@@ -185,6 +185,11 @@ turn ID alongside the full authorized request. Task-terminal promotion and
 cancellation remain unsupported in this slice; unsolicited notices do not grant
 task authority.
 
+The bridge rechecks the exact turn grant after persisting a new acknowledgement.
+If authority is revoked during submission or persistence, that call returns a
+denial. A later authorized request can read the retained acknowledgement without
+reopening the input or sending another native request.
+
 The raw request decoder is canonical-only, with sorted object keys and compact
 UTF-8 JSON, no duplicate or additional members at any depth. Version, seven-field
 Binding, thread ID, input reference and profile are all explicit. Input length is
@@ -238,6 +243,9 @@ another interrupt. Returning a retained acknowledgement, uncertainty or terminal
 observation requires a fresh exact cancellation grant after reading the journal.
 Acknowledged means protocol acknowledgement only; it changes
 neither native terminal metadata nor generic Adapter execution.
+After saving a new acknowledgement, the bridge rechecks the exact cancellation
+grant before returning it. Revocation denies that response and leaves the
+acknowledgement available to a later authorized request.
 
 Existing observed terminal metadata wins before cancellation and after a racing
 acknowledgement; completed/failed is not rewritten as cancelled. ObservedTerminal
