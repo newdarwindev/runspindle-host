@@ -34,6 +34,12 @@ MUTATIONS = [
         "if value.terminal() {",
         "queued_reconciliation_ignores_even_an_exact_discovery",
     ),
+    (
+        "stale_discovery_acknowledgement",
+        "if outcome.is_err() {",
+        "if false {",
+        "reconnect_preserves_observed_session_and_every_binding_field",
+    ),
 ]
 observed = []
 for name, before, after, test in MUTATIONS:

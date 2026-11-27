@@ -57,6 +57,18 @@ second fresh process reconciles the lost reply by discovery. A separate
 component mutation drops the queued guard and adopts a session before launch.
 Exact local results are in [queued reconciliation evidence](../docs/queued-reconciliation-evidence.json).
 
+The invalid-discovery regression starts with an acknowledged operation and
+reopens the actual SQLite store across fresh processes. Both a foreign terminal
+reply and a stale reply must persist an unknown receipt with the prior identity
+and observation cursor. A later exact reply restores acknowledgement. The
+independent scripted peer ledger checks that there was one launch across both
+the initial acknowledgement and later recovery in each scenario, with no
+cancel calls.
+Removing the unknown-state update fails the reconnect mutation check.
+Run `cargo test --locked --offline --test durable invalid_discovery_persists_uncertainty_without_rebinding_or_relaunch -- --exact`.
+The regression fails against base `1dbd4f9263cf81a234d5c3362d8de903dccd1818`,
+where a foreign reply leaves the prior acknowledgement visible after reopen.
+
 ## Ordinary filesystem path requirement
 
 Both Sqlite::open and NativeBridge::open reject an empty raw path, the exact
