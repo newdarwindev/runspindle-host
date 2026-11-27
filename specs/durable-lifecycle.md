@@ -18,6 +18,21 @@ The conservative shared generation can return conflicts for unrelated concurrent
 mutations; callers may refresh/reconcile, never blindly repeat effects. Bounded
 liveness under sustained writer contention is not qualified.
 
+New lifecycle stores commit the table, singleton row and SQLite
+`user_version=1` marker in one transaction. A valid, previously unmarked
+lifecycle store acquires that marker without changing its generation or stored
+state. A database opened by the native identity bridge first can still initialize
+its lifecycle state. On reopen, an existing lifecycle table without its singleton
+row returns a storage error. A marked file whose lifecycle table was lost also
+returns a storage error. Both paths deny lifecycle admission and preserve the
+remaining state.
+
+Fresh-process tests interrupt a launch after a synthetic peer records its effect,
+remove the row or table, and independently verify one retained peer effect and
+no recreated lifecycle state. Detection requires the original file and either
+the version marker or the lifecycle table. Keep the original Host database at
+its approved path.
+
 Bounds: at most 1,024 operations, 4,096 receipts, a 16 MiB serialized state and
 8,192 SQLite pages. Store configuration is immutable on reopen; there is no
 retention eviction or power-loss/filesystem qualification. `try_drain` commits

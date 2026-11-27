@@ -1,5 +1,8 @@
 //! Independent durable peer ledger and fresh-process tests. No native app-server.
-use runspindle_host::{lifecycle::*, storage::Sqlite};
+use runspindle_host::{
+    lifecycle::*,
+    storage::{Sqlite, Storage},
+};
 use rusqlite::{params, Connection};
 use std::{
     path::{Path, PathBuf},
@@ -135,6 +138,13 @@ fn child() {
     };
     let dir = PathBuf::from(dir);
     let mode = std::env::var("HOST_TEST_MODE").unwrap();
+    if mode == "reject_missing_lifecycle_store" {
+        assert!(matches!(
+            Sqlite::open(dir.join("host.sqlite")),
+            Err(Error::Storage)
+        ));
+        return;
+    }
     let mut a = adapter(&dir.join("host.sqlite"));
     let mut peer = Ledger::open(&dir.join("peer.sqlite"));
     if mode == "launch_crash" {
@@ -159,6 +169,88 @@ fn child() {
         &mut peer,
     );
     assert!(result.is_ok() || result == Err(Error::Conflict));
+}
+
+#[test]
+fn lifecycle_reservation_loss_cannot_initialize_again_in_a_fresh_process() {
+    for (damage, table_retained) in [
+        ("DELETE FROM host_state", true),
+        ("DELETE FROM host_state; PRAGMA user_version=0", true),
+        ("DROP TABLE host_state", false),
+    ] {
+        let t = Temporary::new();
+        assert_eq!(
+            run_child(&t.0, "launch_crash").wait().unwrap().code(),
+            Some(93)
+        );
+        let database = Connection::open(t.0.join("host.sqlite")).unwrap();
+        database.execute_batch(damage).unwrap();
+
+        let rejected = run_child(&t.0, "reject_missing_lifecycle_store")
+            .wait()
+            .unwrap();
+        let table_exists: bool = database
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='host_state')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_exists, table_retained);
+        if table_retained {
+            assert_eq!(
+                database
+                    .query_row("SELECT count(*) FROM host_state", [], |row| row
+                        .get::<_, u64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+        assert!(rejected.success());
+        let peer = Connection::open(t.0.join("peer.sqlite")).unwrap();
+        let calls: Vec<String> = peer
+            .prepare("SELECT action FROM calls ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(calls, ["launch"]);
+        let effects: u64 = peer
+            .query_row("SELECT count(*) FROM effects", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(effects, 1);
+    }
+}
+
+#[test]
+fn unmarked_lifecycle_store_adopts_existing_generation_without_replacing_it() {
+    let t = Temporary::new();
+    let database = t.0.join("host.sqlite");
+    assert_eq!(
+        run_child(&t.0, "launch_crash").wait().unwrap().code(),
+        Some(93)
+    );
+    let sqlite = Connection::open(&database).unwrap();
+    sqlite.pragma_update(None, "user_version", 0).unwrap();
+    let original: (u64, Vec<u8>) = sqlite
+        .query_row("SELECT generation,state FROM host_state", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    let (generation, state) = Sqlite::open(&database).unwrap().load().unwrap();
+    assert_eq!(generation, original.0);
+    assert_eq!(state.entries.len(), 1);
+    let retained: (u64, Vec<u8>) = sqlite
+        .query_row("SELECT generation,state FROM host_state", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(retained, original);
+    let version: u32 = sqlite
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 1);
 }
 #[test]
 fn queued_operation_remains_dispatchable_after_fresh_process_reconcile() {
