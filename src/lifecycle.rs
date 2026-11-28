@@ -395,7 +395,9 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
         self.persist()?;
         self.authorized(&value.binding, Action::Launch)?;
         // There is no retry loop. Any unbound accepted reply remains uncertain.
-        match peer.launch(&value.binding) {
+        let reply = peer.launch(&value.binding);
+        self.authorized(&value.binding, Action::Launch)?;
+        match reply {
             LaunchReply::Rejected => value.execution = Execution::Rejected,
             LaunchReply::LostReply => value.execution = Execution::Unknown,
             LaunchReply::Accepted(observation) => {
@@ -491,12 +493,13 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
         if value.terminal() || value.execution == Execution::Queued {
             return Ok(value);
         }
-        let mut observations = peer.discover(binding);
+        let observations = peer.discover(binding);
+        self.authorized(binding, Action::Reconcile)?;
         let outcome = match observations.len() {
             0 => Err(Error::Unknown),
             1 => Self::observe(
                 &mut value,
-                observations.pop().expect("one observation"),
+                observations.into_iter().next().expect("one observation"),
                 now,
                 self.max_age_ms,
             ),
@@ -552,7 +555,9 @@ impl<V: Verifier, S: Storage> Adapter<V, S> {
                         .insert(binding.operation_id.clone(), value.clone());
                     self.persist()?;
                     self.authorized(binding, Action::Cancel)?;
-                    if peer.cancel(binding, session) == CancelReply::Acknowledged {
+                    let reply = peer.cancel(binding, session);
+                    self.authorized(binding, Action::Cancel)?;
+                    if reply == CancelReply::Acknowledged {
                         value.cancellation = Cancellation::Acknowledged;
                     }
                 }

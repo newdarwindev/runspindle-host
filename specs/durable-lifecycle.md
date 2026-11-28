@@ -50,6 +50,14 @@ ledger makes duplicate effects fail and records actual call order. Mutation runs
 remove dispatch deduplication and the session fence in disposable source copies;
 only behavioral assertion failures count. See `docs/durable-lifecycle-tests.json`.
 
+The adapter rechecks the same binding and action authority after launch,
+discovery, and cancellation return, before committing the reply or issuing a
+receipt. If authority is denied at that point, a committed launch remains
+scheduled and a committed cancellation remains requested. The retained
+reservations prevent replaying either call. Denied discovery leaves the
+previous snapshot intact. Fresh authority can reconcile through the normal
+read-only path.
+
 Queued reconciliation is verified in a fresh process before dispatch. The
 independent SQLite peer records zero calls while that operation is queued. A
 later dispatch with fresh selected-host presence records one launch, and a
